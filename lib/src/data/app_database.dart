@@ -14,6 +14,9 @@ class CyclingActivities extends Table {
   TextColumn get startDate => text()();
   RealColumn get averageHeartRate => real().withDefault(const Constant(0))();
   TextColumn get note => text().withDefault(const Constant(''))();
+  // v6: rute GPS (JSON ringkas) + durasi real perekaman (detik).
+  TextColumn get routeJson => text().withDefault(const Constant(''))();
+  RealColumn get durationSec => real().withDefault(const Constant(0))();
 }
 
 @DataClassName('EventRow')
@@ -35,10 +38,21 @@ class PlanChecks extends Table {
 
 @DriftDatabase(tables: [CyclingActivities, EventGoals, PlanChecks])
 class AppDatabase extends _$AppDatabase {
-  AppDatabase() : super(driftDatabase(name: 'cycling_coach_database'));
+  // Web (Chrome/Edge) butuh `web:` berisi URI sqlite3.wasm +
+  // drift_worker.js (di folder web/, dari release drift yang sama dengan
+  // pubspec.lock). Tanpa ini web crash: "the `web` parameter needs to be
+  // set". Di Android/iOS/desktop param `web` diabaikan (pakai file native).
+  AppDatabase()
+      : super(driftDatabase(
+          name: 'cycling_coach_database',
+          web: DriftWebOptions(
+            sqlite3Wasm: Uri.parse('sqlite3.wasm'),
+            driftWorker: Uri.parse('drift_worker.js'),
+          ),
+        ));
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -62,6 +76,18 @@ class AppDatabase extends _$AppDatabase {
             } catch (_) {
               // Kolom tidak ada — bukan error.
             }
+          }
+          // v6: rute GPS + durasi real. addColumn dibungkus try agar
+          // upgrade parsial / reinstall tidak crash.
+          if (from < 6) {
+            try {
+              await m.addColumn(
+                  cyclingActivities, cyclingActivities.routeJson);
+            } catch (_) {}
+            try {
+              await m.addColumn(
+                  cyclingActivities, cyclingActivities.durationSec);
+            } catch (_) {}
           }
         },
       );
@@ -88,6 +114,8 @@ class AppDatabase extends _$AppDatabase {
         startDate: r.startDate,
         averageHeartRate: r.averageHeartRate,
         note: r.note,
+        routeJson: r.routeJson,
+        durationSec: r.durationSec,
       );
 
   Future<int> upsertActivity(m.CyclingActivity a) {
@@ -100,6 +128,8 @@ class AppDatabase extends _$AppDatabase {
       startDate: Value(a.startDate),
       averageHeartRate: Value(a.averageHeartRate),
       note: Value(a.note),
+      routeJson: Value(a.routeJson),
+      durationSec: Value(a.durationSec),
     );
     return into(cyclingActivities).insertOnConflictUpdate(c);
   }
@@ -151,6 +181,8 @@ class AppDatabase extends _$AppDatabase {
           startDate: Value(a.startDate),
           averageHeartRate: Value(a.averageHeartRate),
           note: Value(a.note),
+          routeJson: Value(a.routeJson),
+          durationSec: Value(a.durationSec),
         ));
       }
       for (final e in events) {

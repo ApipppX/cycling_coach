@@ -55,6 +55,7 @@ Future<File> buildWeeklyReportPdf(String profileName,
           '${a.ctl.toStringAsFixed(0)} / ${a.atl.toStringAsFixed(0)} / ${a.tsb.toStringAsFixed(0)} (${a.freshnessLabel})'),
       kv('Mix sesi', a.weekMix),
       kv('Sesi acuan', '${a.latestName} (${a.latestDate})'),
+      kv('Sesi GPS', '${last7.where((s) => s.hasRoute).length}/${last7.length} dengan peta rute'),
       if (topMin > 0)
         kv('Zona dominan',
             '$topZone (${topMin.toStringAsFixed(0)} mnt)'),

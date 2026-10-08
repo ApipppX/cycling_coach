@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../widgets/responsive.dart';
 import 'dashboard_screen.dart';
+import 'track_screen.dart';
 import 'coach_screen.dart';
 import 'stats_screen.dart';
 import 'event_screen.dart';
@@ -19,6 +20,7 @@ class _ShellState extends ConsumerState<HomeShell> {
   // saat pindah tab — IndexedStack menjaga semua halaman tetap hidup.
   static const _pages = [
     DashboardScreen(),
+    TrackScreen(),
     CoachScreen(),
     StatsScreen(),
     EventScreen(),
@@ -49,6 +51,11 @@ class _ShellState extends ConsumerState<HomeShell> {
                         icon: Icon(Icons.home_outlined),
                         selectedIcon: Icon(Icons.home),
                         label: Text('Beranda')),
+                    NavigationRailDestination(
+                        icon: Icon(Icons.fiber_manual_record_outlined),
+                        selectedIcon:
+                            Icon(Icons.fiber_manual_record),
+                        label: Text('Rekam')),
                     NavigationRailDestination(
                         icon: Icon(Icons.favorite_outline),
                         selectedIcon: Icon(Icons.favorite),
@@ -86,6 +93,10 @@ class _ShellState extends ConsumerState<HomeShell> {
                   icon: Icon(Icons.home_outlined),
                   selectedIcon: Icon(Icons.home),
                   label: 'Beranda'),
+              NavigationDestination(
+                  icon: Icon(Icons.fiber_manual_record_outlined),
+                  selectedIcon: Icon(Icons.fiber_manual_record),
+                  label: 'Rekam'),
               NavigationDestination(
                   icon: Icon(Icons.favorite_outline),
                   selectedIcon: Icon(Icons.favorite),

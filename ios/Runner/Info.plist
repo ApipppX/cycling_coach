@@ -53,6 +53,12 @@
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>CyclingCoach memakai GPS untuk merekam rute, jarak, dan kecepatan gowesmu (peta ala Strava).</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>CyclingCoach memakai GPS untuk merekam rute gowes. Boleh "While Using" saja.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Untuk deteksi auto-pause saat berhenti di lampu merah.</string>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

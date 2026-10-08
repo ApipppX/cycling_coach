@@ -16,6 +16,7 @@ import '../widgets/responsive.dart';
 import '../widgets/zone_chip.dart';
 import '../theme/app_theme.dart';
 import 'session_screens.dart';
+import 'track_screen.dart';
 
 const _sampleCsv = '''id,nama,tanggal,jarak_km,elevasi_m,kecepatan_kmh,hr_bpm,catatan
 ,Gowes Pagi,2026-09-01,25.50,150,25.0,140,"Rute biasa, angin sepoi"
@@ -119,12 +120,26 @@ class _DashState extends ConsumerState<DashboardScreen> {
           ],
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-          heroTag: 'dashboard_fab',
-          tooltip: 'Tambah latihan',
-          onPressed: () => _openForm(null),
-          icon: const Icon(Icons.add),
-          label: const Text('Latihan')),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          FloatingActionButton.extended(
+            heroTag: 'dashboard_gps',
+            tooltip: 'Rekam GPS (peta)',
+            onPressed: () => _goTrack(),
+            icon: const Icon(Icons.fiber_manual_record),
+            label: const Text('Rekam GPS'),
+          ),
+          const SizedBox(height: 10),
+          FloatingActionButton.extended(
+              heroTag: 'dashboard_fab',
+              tooltip: 'Tambah manual',
+              onPressed: () => _openForm(null),
+              icon: const Icon(Icons.add),
+              label: const Text('Manual')),
+        ],
+      ),
       body: RefreshIndicator(
         onRefresh: () async => ref.invalidate(activitiesProvider),
         child: ResponsiveList(children: [
@@ -209,9 +224,10 @@ class _DashState extends ConsumerState<DashboardScreen> {
           EmptyState(
             icon: Icons.directions_bike,
             title: 'Belum ada latihan.',
-            subtitle: 'Tambah manual via tombol +, atau impor CSV.',
-            actionLabel: 'Tambah latihan pertama',
-            onAction: () => _openForm(null),
+            subtitle:
+                'Rekam GPS dengan peta, tambah manual, atau impor CSV.',
+            actionLabel: 'Rekam GPS pertama',
+            onAction: () => _goTrack(),
           ),
         ...filtered.asMap().entries.map((entry) {
           final a = entry.value;
@@ -239,6 +255,7 @@ class _DashState extends ConsumerState<DashboardScreen> {
               subtitle: Text(
                   '${formatDateShort(a.startDate)} • ${(a.distance / 1000).toStringAsFixed(1)} km • ${msToKmh(a.averageSpeed).toStringAsFixed(1)} km/h'
                   '${a.averageHeartRate > 0 ? ' • ${a.averageHeartRate.toInt()} bpm $zone' : ''} • ${kcal.toStringAsFixed(0)} kkal'
+                  '${a.hasRoute ? ' • 🗺 GPS' : ''}'
                   '${a.note.isNotEmpty ? ' • ada catatan' : ''}',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis),
@@ -309,6 +326,12 @@ class _DashState extends ConsumerState<DashboardScreen> {
 
   void _toggle(int id) => setState(
       () => selected.contains(id) ? selected.remove(id) : selected.add(id));
+
+  /// Buka layar Rekam GPS (peta OSM live + auto-pause + simpan ke DB).
+  void _goTrack() {
+    Navigator.push(
+        context, MaterialPageRoute(builder: (_) => const TrackScreen()));
+  }
 
   void _pushEvaluation(CyclingActivity saved) {
     Navigator.push(

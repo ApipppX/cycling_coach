@@ -216,6 +216,9 @@ String planTypeLabel(PlanType t) => switch (t) {
 
 // ---------- Core ----------
 double durationMinOf(CyclingActivity a) {
+  // Durasi GPS real diutamakan (termasuk jeda lampu merah); fallback ke
+  // jarak/kecepatan untuk sesi manual/CSV lama.
+  if (a.durationSec > 0) return a.durationSec / 60.0;
   if (a.averageSpeed <= 0) return 0;
   return a.distance / a.averageSpeed / 60.0;
 }
