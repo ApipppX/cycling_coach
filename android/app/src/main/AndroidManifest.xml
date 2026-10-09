@@ -8,7 +8,7 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
     <application
-        android:label="cycling_coach"
+        android:label="CyclingCoach"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

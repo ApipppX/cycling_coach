@@ -11,13 +11,12 @@ import '../data/prefs.dart';
 ///    In-App Purchase tanpa ubah UI paywall — provider ini yang diganti.
 ///
 /// TODO SEBELUM RILIS:
-/// - Ganti [donateUrl] dengan link Saweria/Trakteer/QRIS kamu.
-/// - Ganti [storeUrl] dengan link Play Store setelah app terbit
-///   (butuh applicationId final, bukan com.example.*).
+/// - Ganti [donateUrl] dengan link Saweria/Trakteer/QRIS kamu (1 baris).
+/// - [storeUrl] otomatis ikut applicationId final (bukan com.example.* lagi).
 /// - Ganti [donorCodes] dengan kode acak kamu sendiri.
 const donateUrl = 'https://saweria.co/TODO-GANTI-USERNAME';
 const storeUrl =
-    'https://play.google.com/store/apps/details?id=com.example.cycling_coach';
+    'https://play.google.com/store/apps/details?id=com.apipppx.cyclingcoach';
 const shareText =
     'Coba CyclingCoach — pelatih sepeda pribadi + GPS ala Strava, gratis! $storeUrl';
 

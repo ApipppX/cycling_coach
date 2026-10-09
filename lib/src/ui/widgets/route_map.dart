@@ -20,7 +20,7 @@ const _darkUrl =
 const _fallbackUrl =
     'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
 const _osmAttribution = '© OpenStreetMap · © CARTO';
-const _appPackage = 'com.example.cycling_coach';
+const _appPackage = 'com.apipppx.cyclingcoach';
 
 /// Penghitung error tile global per sesi jalan-nya app.
 ///
