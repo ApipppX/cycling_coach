@@ -4,11 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/backup.dart';
+import '../../core/premium.dart';
 import '../../providers/providers.dart';
 import '../../data/prefs.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common.dart';
+import '../widgets/pro_paywall.dart';
 import '../widgets/responsive.dart';
 
 class ProfileScreen extends ConsumerWidget {
@@ -17,6 +20,7 @@ class ProfileScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final p = ref.watch(prefsProvider);
+    final isPro = ref.watch(premiumProvider).isPro;
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(title: Text('Profil')),
@@ -134,6 +138,39 @@ class ProfileScreen extends ConsumerWidget {
             ],
           ),
         ),
+        const SectionTitle('CyclingCoach Pro'),
+        Card(
+          child: ListTile(
+            leading: Container(
+              width: AppSizes.avatarSm,
+              height: AppSizes.avatarSm,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: isPro
+                    ? Colors.amber.withValues(alpha: 0.25)
+                    : scheme.primaryContainer,
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+              ),
+              child: Icon(isPro ? Icons.verified : Icons.lock_outline,
+                  color: isPro ? Colors.amber.shade800 : null),
+            ),
+            title: Text(isPro ? 'Kamu PRO — makasih!' : 'Upgrade ke PRO',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(fontWeight: FontWeight.w700)),
+            subtitle: Text(
+                isPro
+                    ? 'PDF bersih + peta gelap aktif'
+                    : 'Donasi sekali, Pro selamanya. Inti app tetap gratis.',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => showProPaywall(context, ref),
+          ),
+        ),
         const SectionTitle('Data'),
         Card(
           child: Column(
@@ -169,6 +206,44 @@ class ProfileScreen extends ConsumerWidget {
                     maxLines: 1, overflow: TextOverflow.ellipsis),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => _importBackup(context, ref),
+              ),
+              Divider(
+                  height: 1,
+                  indent: AppSpacing.lg,
+                  endIndent: AppSpacing.lg,
+                  color: scheme.outlineVariant
+                      .withValues(alpha: 0.4)),
+              ListTile(
+                leading: const Icon(Icons.share_outlined),
+                title: Text('Bagikan app',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyMedium
+                        ?.copyWith(fontWeight: FontWeight.w700)),
+                subtitle: const Text('Ajak teman gowes bareng',
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => SharePlus.instance.share(
+                    ShareParams(text: shareText)),
+              ),
+              Divider(
+                  height: 1,
+                  indent: AppSpacing.lg,
+                  endIndent: AppSpacing.lg,
+                  color: scheme.outlineVariant
+                      .withValues(alpha: 0.4)),
+              ListTile(
+                leading: const Icon(Icons.star_outline),
+                title: Text('Nilai di Play Store',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyMedium
+                        ?.copyWith(fontWeight: FontWeight.w700)),
+                subtitle: const Text('Bintang 5 bantu app naik peringkat',
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => launchUrl(Uri.parse(storeUrl),
+                    mode: LaunchMode.externalApplication),
               ),
             ],
           ),

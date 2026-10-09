@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/places_api.dart';
+import '../../core/premium.dart';
+import '../widgets/pro_paywall.dart';
 import '../widgets/route_map.dart';
 
 /// Layar Jelajah ala GMaps (tapi tile OSM, gratis tanpa API key):
@@ -14,13 +17,13 @@ import '../widgets/route_map.dart';
 ///
 /// Semua network call aman-offline: gagal → snackbar, peta tetap tampil
 /// (fallback Carto) + tidak pernah blank tanpa penjelasan.
-class ExploreScreen extends StatefulWidget {
+class ExploreScreen extends ConsumerStatefulWidget {
   const ExploreScreen({super.key});
   @override
-  State<ExploreScreen> createState() => _ExploreState();
+  ConsumerState<ExploreScreen> createState() => _ExploreState();
 }
 
-class _ExploreState extends State<ExploreScreen> {
+class _ExploreState extends ConsumerState<ExploreScreen> {
   final _map = MapController();
   final _search = TextEditingController();
   Timer? _debounce;
@@ -37,6 +40,7 @@ class _ExploreState extends State<ExploreScreen> {
   BikeRoute? _route;
   bool _routing = false;
   String? _routeErr;
+  bool _dark = false;
 
   @override
   void initState() {
@@ -246,7 +250,23 @@ class _ExploreState extends State<ExploreScreen> {
     ];
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Jelajah')),
+      appBar: AppBar(
+        title: const Text('Jelajah'),
+        actions: [
+          IconButton(
+            icon: Icon(
+                _dark ? Icons.dark_mode : Icons.light_mode_outlined),
+            tooltip: 'Gaya peta (Gelap = PRO)',
+            onPressed: () {
+              if (!_dark && !ref.read(premiumProvider).isPro) {
+                showProPaywall(context, ref);
+                return;
+              }
+              setState(() => _dark = !_dark);
+            },
+          ),
+        ],
+      ),
       body: Column(children: [
         // Bar cari ala GMaps.
         Padding(
@@ -336,7 +356,7 @@ class _ExploreState extends State<ExploreScreen> {
                     onTap: (_, ll) => _setDest(ll),
                   ),
                   children: [
-                    osmTiles(),
+                    osmTiles(dark: _dark),
                     if (_route != null)
                       PolylineLayer(polylines: [
                         Polyline(

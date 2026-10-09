@@ -15,6 +15,8 @@ import '../../core/geo_utils.dart';
 /// - [errorTileCallback] dikosongkan agar terminal tidak dispam stacktrace
 ///   per-tile; user cukup lihat peta fallback / tombol muat ulang.
 const _osmUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+const _darkUrl =
+    'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
 const _fallbackUrl =
     'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
 const _osmAttribution = '© OpenStreetMap · © CARTO';
@@ -22,9 +24,10 @@ const _appPackage = 'com.example.cycling_coach';
 
 /// Satu-satunya konstruktor TileLayer yang dipakai seluruh app.
 /// Konsisten → sekali perbaiki, semua peta (rekam/detail/jelajah) ikut sembuh.
-TileLayer osmTiles() {
+/// [dark] = gaya Dark Matter, enak untuk gowes malam (keuntungan PRO).
+TileLayer osmTiles({bool dark = false}) {
   return TileLayer(
-    urlTemplate: _osmUrl,
+    urlTemplate: dark ? _darkUrl : _osmUrl,
     fallbackUrl: _fallbackUrl,
     userAgentPackageName: _appPackage,
     // Jangan spam terminal saat offline / 403: cukup fallback yang tampil.
@@ -176,12 +179,14 @@ class LiveTrackMap extends StatelessWidget {
   final double? currentLat;
   final double? currentLng;
   final MapController controller;
+  final bool dark;
   const LiveTrackMap({
     super.key,
     required this.points,
     required this.controller,
     this.currentLat,
     this.currentLng,
+    this.dark = false,
   });
 
   @override
@@ -202,7 +207,7 @@ class LiveTrackMap extends StatelessWidget {
         maxZoom: 19,
       ),
       children: [
-        osmTiles(),
+        osmTiles(dark: dark),
         if (trail.length >= 2)
           PolylineLayer(
             polylines: [

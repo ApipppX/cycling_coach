@@ -5,11 +5,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../core/geo_utils.dart';
+import '../../core/premium.dart';
 import '../../core/track_recorder.dart';
 import '../../data/prefs.dart';
 import '../../providers/providers.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common.dart';
+import '../widgets/pro_paywall.dart';
 import '../widgets/responsive.dart';
 import '../widgets/route_map.dart';
 
@@ -32,6 +34,7 @@ class TrackScreen extends ConsumerStatefulWidget {
 class _TrackState extends ConsumerState<TrackScreen> {
   final _map = MapController();
   bool _follow = true;
+  bool _darkMap = false;
   LatLng? _lastCentered;
 
   @override
@@ -68,6 +71,20 @@ class _TrackState extends ConsumerState<TrackScreen> {
       appBar: AppBar(
         title: const Text('Rekam GPS'),
         actions: [
+          IconButton(
+            icon: Icon(_darkMap
+                ? Icons.dark_mode
+                : Icons.light_mode_outlined),
+            tooltip: 'Gaya peta (Gelap = PRO)',
+            onPressed: () {
+              if (!_darkMap &&
+                  !ref.read(premiumProvider).isPro) {
+                showProPaywall(context, ref);
+                return;
+              }
+              setState(() => _darkMap = !_darkMap);
+            },
+          ),
           Row(children: [
             const Icon(Icons.pause_circle_outline, size: 18),
             Switch(
@@ -114,6 +131,7 @@ class _TrackState extends ConsumerState<TrackScreen> {
               currentLat: t.currentLat,
               currentLng: t.currentLng,
               controller: _map,
+              dark: _darkMap,
             ),
             // Chip status di atas peta.
             Positioned(

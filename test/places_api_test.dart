@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:cycling_coach/src/core/places_api.dart';
+import 'package:cycling_coach/src/core/premium.dart';
 
 void main() {
   test('searchPlaces query kosong tidak panggil network', () async {
@@ -26,5 +27,12 @@ void main() {
     expect(dir.queryParameters['destination'], '-6.3,106.9');
     final s = googleMapsSearchUri(to, 'Kawah');
     expect(s.queryParameters['query'], contains('-6.3'));
+  });
+
+  test('Kode donasi dinormalisasi + tervalidasi', () {
+    expect(normalizeCode('  gowes-pro-2026 '), 'GOWES-PRO-2026');
+    expect(isValidDonorCode('gowes-pro-2026'), isTrue);
+    expect(isValidDonorCode('salah'), isFalse);
+    expect(proPerks.length, 3);
   });
 }

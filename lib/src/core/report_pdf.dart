@@ -7,7 +7,7 @@ import 'health_stats.dart';
 
 Future<File> buildWeeklyReportPdf(String profileName,
     List<CyclingActivity> activities, double targetKm, int maxHr,
-    [double weightKg = 70, EventGoal? event]) async {
+    [double weightKg = 70, EventGoal? event, bool isPro = false]) async {
   final a = analyzeCoach(activities, maxHr, event);
   final today = todayString();
   final rec = computeRecords(activities);
@@ -99,6 +99,14 @@ Future<File> buildWeeklyReportPdf(String profileName,
       pw.Text('Plan minggu: ${a.weekPlan}'),
       if (a.warnings.isNotEmpty) h('Peringatan'),
       for (final w in a.warnings) pw.Bullet(text: w),
+      // Footer edisi gratis = iklan halus tiap laporan dibagikan
+      // (= marketing gratis). Pro: bersih.
+      if (!isPro)
+        pw.Padding(
+          padding: const pw.EdgeInsets.only(top: 16),
+          child: pw.Text('Dibuat dengan CyclingCoach (gratis) — upgrade ke PRO untuk laporan bersih.',
+              style: const pw.TextStyle(fontSize: 9)),
+        ),
     ],
   ));
   final dir = await getTemporaryDirectory();

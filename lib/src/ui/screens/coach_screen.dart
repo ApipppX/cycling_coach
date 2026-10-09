@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../core/coach_engine.dart';
 import '../../core/health_stats.dart';
+import '../../core/premium.dart';
 import '../../core/report_pdf.dart';
 import '../../providers/providers.dart';
 import '../../data/prefs.dart';
@@ -162,13 +163,15 @@ class CoachScreen extends ConsumerWidget {
           icon: Icons.share_outlined,
           label: 'Bagikan Laporan PDF',
           onPressed: () async {
+            final isPro = ref.read(premiumProvider).isPro;
             final f = await buildWeeklyReportPdf(
                 prefs.userName,
                 acts,
                 prefs.weeklyTargetKm,
                 prefs.maxHr,
                 prefs.weightKg,
-                event);
+                event,
+                isPro);
             await SharePlus.instance.share(ShareParams(
                 files: [XFile(f.path)],
                 subject: 'Laporan Mingguan'));
