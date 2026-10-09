@@ -4,12 +4,36 @@ import 'package:latlong2/latlong.dart';
 import '../../models/models.dart';
 import '../../core/geo_utils.dart';
 
-/// Tile OpenStreetMap standar (stack yang sama dipakai Leaflet.js di web).
-/// flutter_map = "Leaflet untuk Flutter": TileLayer + PolylineLayer + MarkerLayer.
+/// Tile OSM primer (stack yang sama dipakai Leaflet.js di web).
+/// flutter_map sama dengan Leaflet untuk Flutter: TileLayer + Polyline + Marker.
+///
+/// PENTING (bug peta blank di HP):
+/// - Android WAJIB punya `INTERNET` permission di AndroidManifest.
+///   Tanpa itu tile gagal dimuat → abu-abu + log "flutter_map" berulang.
+/// - OSM kadang rate-limit (403). [fallbackUrl] Carto Light memastikan
+///   peta tetap tampil walau OSM menolak.
+/// - [errorTileCallback] dikosongkan agar terminal tidak dispam stacktrace
+///   per-tile; user cukup lihat peta fallback / tombol muat ulang.
 const _osmUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-const _osmAttribution = '© OpenStreetMap contributors';
+const _fallbackUrl =
+    'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
+const _osmAttribution = '© OpenStreetMap · © CARTO';
+const _appPackage = 'com.example.cycling_coach';
 
-LatLngBounds? _boundsOf(List<LatLng> pts) {
+/// Satu-satunya konstruktor TileLayer yang dipakai seluruh app.
+/// Konsisten → sekali perbaiki, semua peta (rekam/detail/jelajah) ikut sembuh.
+TileLayer osmTiles() {
+  return TileLayer(
+    urlTemplate: _osmUrl,
+    fallbackUrl: _fallbackUrl,
+    userAgentPackageName: _appPackage,
+    // Jangan spam terminal saat offline / 403: cukup fallback yang tampil.
+    // ignore: avoid_print
+    errorTileCallback: (tile, error, stack) {},
+  );
+}
+
+LatLngBounds? boundsOf(List<LatLng> pts) {
   if (pts.isEmpty) return null;
   var minLat = pts.first.latitude,
       maxLat = pts.first.latitude,
@@ -21,8 +45,11 @@ LatLngBounds? _boundsOf(List<LatLng> pts) {
     if (p.longitude < minLng) minLng = p.longitude;
     if (p.longitude > maxLng) maxLng = p.longitude;
   }
-  // Padding agar start/finish tak mepet tepi.
-  const pad = 0.002;
+  // Padding agar start/finish tak mepet tepi. Kalau 1 titik / garis
+  // sangat pendek, kembangkan paksa agar CameraFit tak over-zoom / crash.
+  var pad = 0.002;
+  if ((maxLat - minLat).abs() < 0.0005) pad = 0.005;
+  if ((maxLng - minLng).abs() < 0.0005) pad = 0.005;
   return LatLngBounds(
     LatLng(minLat - pad, minLng - pad),
     LatLng(maxLat + pad, maxLng + pad),
@@ -44,9 +71,8 @@ class RouteMap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final pts = decodeRoute(routeJson)
-        .map((p) => LatLng(p.lat, p.lng))
-        .toList();
+    final pts =
+        decodeRoute(routeJson).map((p) => LatLng(p.lat, p.lng)).toList();
     final scheme = Theme.of(context).colorScheme;
     if (pts.isEmpty) {
       return Container(
@@ -70,31 +96,29 @@ class RouteMap extends StatelessWidget {
         ]),
       );
     }
-    final bounds = _boundsOf(pts)!;
+    final bounds = boundsOf(pts)!;
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: SizedBox(
         height: height,
         child: FlutterMap(
           options: MapOptions(
-            initialCameraFit:
-                CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(24)),
+            initialCameraFit: CameraFit.bounds(
+              bounds: bounds,
+              padding: const EdgeInsets.all(24),
+              maxZoom: 17,
+            ),
             interactionOptions: InteractionOptions(
                 flags: interactive
                     ? InteractiveFlag.all
                     : InteractiveFlag.none),
           ),
           children: [
-            TileLayer(
-              urlTemplate: _osmUrl,
-              userAgentPackageName: 'com.example.cycling_coach',
-            ),
+            osmTiles(),
             PolylineLayer(
               polylines: [
                 Polyline(
-                    points: pts,
-                    strokeWidth: 4.5,
-                    color: scheme.primary),
+                    points: pts, strokeWidth: 4.5, color: scheme.primary),
               ],
             ),
             MarkerLayer(
@@ -103,17 +127,15 @@ class RouteMap extends StatelessWidget {
                   point: pts.first,
                   width: 30,
                   height: 30,
-                  child: _Pin(
-                      color: Colors.green,
-                      icon: Icons.play_arrow_rounded),
+                  child: const _Pin(
+                      color: Colors.green, icon: Icons.play_arrow_rounded),
                 ),
                 Marker(
                   point: pts.last,
                   width: 30,
                   height: 30,
                   child: _Pin(
-                      color: scheme.primary,
-                      icon: Icons.flag_rounded),
+                      color: scheme.primary, icon: Icons.flag_rounded),
                 ),
               ],
             ),
@@ -165,8 +187,7 @@ class LiveTrackMap extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final trail =
-        points.map((p) => LatLng(p.lat, p.lng)).toList();
+    final trail = points.map((p) => LatLng(p.lat, p.lng)).toList();
     final center = currentLat != null && currentLng != null
         ? LatLng(currentLat!, currentLng!)
         : (trail.isNotEmpty
@@ -181,17 +202,12 @@ class LiveTrackMap extends StatelessWidget {
         maxZoom: 19,
       ),
       children: [
-        TileLayer(
-          urlTemplate: _osmUrl,
-          userAgentPackageName: 'com.example.cycling_coach',
-        ),
+        osmTiles(),
         if (trail.length >= 2)
           PolylineLayer(
             polylines: [
               Polyline(
-                  points: trail,
-                  strokeWidth: 5,
-                  color: scheme.primary),
+                  points: trail, strokeWidth: 5, color: scheme.primary),
             ],
           ),
         if (currentLat != null && currentLng != null)
@@ -226,6 +242,82 @@ class LiveTrackMap extends StatelessWidget {
           attributions: [TextSourceAttribution(_osmAttribution)],
         ),
       ],
+    );
+  }
+}
+
+/// Tombol zoom +/- ala GMaps. Butuh [controller] yang sama dengan FlutterMap.
+class MapZoomButtons extends StatelessWidget {
+  final MapController controller;
+  const MapZoomButtons({super.key, required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      _zoomBtn(context, Icons.add, () {
+        try {
+          controller.move(
+              controller.camera.center, controller.camera.zoom + 1);
+        } catch (_) {}
+      }),
+      const SizedBox(height: 8),
+      _zoomBtn(context, Icons.remove, () {
+        try {
+          controller.move(
+              controller.camera.center, controller.camera.zoom - 1);
+        } catch (_) {}
+      }),
+    ]);
+  }
+
+  Widget _zoomBtn(BuildContext context, IconData icon, VoidCallback onTap) {
+    return Material(
+      elevation: 2,
+      shape: const CircleBorder(),
+      color: Theme.of(context).colorScheme.surface,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: SizedBox(
+          width: 40,
+          height: 40,
+          child: Icon(icon, size: 20),
+        ),
+      ),
+    );
+  }
+}
+
+/// Hint offline yang ramah: muncul di atas peta saat tile gagal.
+/// Dipakai di Track + Explore agar "blank" selalu ada penjelasannya.
+class MapOfflineHint extends StatelessWidget {
+  const MapOfflineHint({super.key});
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: scheme.surface.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.wifi_off_outlined,
+            size: 14, color: scheme.onSurfaceVariant),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            'Peta butuh internet — cek koneksi bila kosong',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+        ),
+      ]),
     );
   }
 }

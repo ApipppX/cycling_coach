@@ -136,20 +136,51 @@ class _TrackState extends ConsumerState<TrackScreen> {
                   ),
               ]),
             ),
-            // Tombol follow / recenter.
+            // Tombol follow / recenter + zoom ala GMaps.
             if (live)
               Positioned(
                 bottom: 12,
                 right: 12,
-                child: FloatingActionButton.small(
-                  heroTag: 'follow_btn',
-                  tooltip: _follow ? 'Ikuti saya: ON' : 'Ikuti saya: OFF',
-                  onPressed: () => setState(() => _follow = !_follow),
-                  child: Icon(_follow
-                      ? Icons.my_location
-                      : Icons.location_searching),
-                ),
+                child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      FloatingActionButton.small(
+                        heroTag: 'follow_btn',
+                        tooltip: _follow ? 'Ikuti saya: ON' : 'Ikuti saya: OFF',
+                        onPressed: () {
+                          final next = !_follow;
+                          setState(() => _follow = next);
+                          // Saat dinyalakan lagi → langsung lompat ke posisi.
+                          if (next &&
+                              t.currentLat != null &&
+                              t.currentLng != null) {
+                            try {
+                              _map.move(
+                                  LatLng(t.currentLat!, t.currentLng!),
+                                  _map.camera.zoom);
+                            } catch (_) {}
+                          }
+                        },
+                        child: Icon(_follow
+                            ? Icons.my_location
+                            : Icons.location_searching),
+                      ),
+                      const SizedBox(height: 8),
+                      MapZoomButtons(controller: _map),
+                    ]),
               ),
+            // Zoom tetap tersedia sebelum GPS lock agar user bisa jelajah.
+            if (!live)
+              Positioned(
+                bottom: 12,
+                right: 12,
+                child: MapZoomButtons(controller: _map),
+              ),
+            const Positioned(
+              left: 10,
+              bottom: 10,
+              child: MapOfflineHint(),
+            ),
           ]),
         ),
         // Panel statistik live.

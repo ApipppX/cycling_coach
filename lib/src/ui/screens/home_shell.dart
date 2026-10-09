@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../widgets/responsive.dart';
 import 'dashboard_screen.dart';
 import 'track_screen.dart';
+import 'explore_screen.dart';
 import 'coach_screen.dart';
 import 'stats_screen.dart';
 import 'event_screen.dart';
@@ -21,6 +22,7 @@ class _ShellState extends ConsumerState<HomeShell> {
   static const _pages = [
     DashboardScreen(),
     TrackScreen(),
+    ExploreScreen(),
     CoachScreen(),
     StatsScreen(),
     EventScreen(),
@@ -56,6 +58,10 @@ class _ShellState extends ConsumerState<HomeShell> {
                         selectedIcon:
                             Icon(Icons.fiber_manual_record),
                         label: Text('Rekam')),
+                    NavigationRailDestination(
+                        icon: Icon(Icons.map_outlined),
+                        selectedIcon: Icon(Icons.map),
+                        label: Text('Jelajah')),
                     NavigationRailDestination(
                         icon: Icon(Icons.favorite_outline),
                         selectedIcon: Icon(Icons.favorite),
@@ -98,13 +104,17 @@ class _ShellState extends ConsumerState<HomeShell> {
                   selectedIcon: Icon(Icons.fiber_manual_record),
                   label: 'Rekam'),
               NavigationDestination(
+                  icon: Icon(Icons.map_outlined),
+                  selectedIcon: Icon(Icons.map),
+                  label: 'Jelajah'),
+              NavigationDestination(
                   icon: Icon(Icons.favorite_outline),
                   selectedIcon: Icon(Icons.favorite),
-                  label: 'Coach AI'),
+                  label: 'Coach'),
               NavigationDestination(
                   icon: Icon(Icons.bar_chart_outlined),
                   selectedIcon: Icon(Icons.bar_chart),
-                  label: 'Statistik'),
+                  label: 'Stats'),
               NavigationDestination(
                   icon: Icon(Icons.flag_outlined),
                   selectedIcon: Icon(Icons.flag),
