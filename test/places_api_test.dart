@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:cycling_coach/src/core/places_api.dart';
 import 'package:cycling_coach/src/core/premium.dart';
+import 'package:cycling_coach/src/ui/widgets/route_map.dart';
 
 void main() {
   test('searchPlaces query kosong tidak panggil network', () async {
@@ -34,5 +35,18 @@ void main() {
     expect(isValidDonorCode('gowes-pro-2026'), isTrue);
     expect(isValidDonorCode('salah'), isFalse);
     expect(proPerks.length, 3);
+  });
+
+  test('Badge offline hanya setelah >=3 tile error', () {
+    resetMapTileErrors();
+    expect(mapTileErrorCount.value, 0);
+    recordMapTileError();
+    recordMapTileError();
+    // 2 error = blip, badge tetap sembunyi (< 3).
+    expect(mapTileErrorCount.value, 2);
+    recordMapTileError();
+    expect(mapTileErrorCount.value, greaterThanOrEqualTo(3));
+    resetMapTileErrors();
+    expect(mapTileErrorCount.value, 0);
   });
 }

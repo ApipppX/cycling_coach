@@ -22,6 +22,20 @@ const _fallbackUrl =
 const _osmAttribution = '© OpenStreetMap · © CARTO';
 const _appPackage = 'com.example.cycling_coach';
 
+/// Penghitung error tile global per sesi jalan-nya app.
+///
+/// Latar: badge "wifi mati" yang SELALU tampil membuat user mengira peta
+/// rusak padahal internet baik-baik saja. Sekarang [MapOfflineHint] hanya
+/// muncul bila tile BENAR-BENAR gagal dimuat (offline / OSM 403), dan bisa
+/// di-dismiss. Ambang 3 agar satu blip jaringan tak memicu badge.
+final mapTileErrorCount = ValueNotifier<int>(0);
+
+void recordMapTileError() {
+  if (mapTileErrorCount.value < 1000000) mapTileErrorCount.value++;
+}
+
+void resetMapTileErrors() => mapTileErrorCount.value = 0;
+
 /// Satu-satunya konstruktor TileLayer yang dipakai seluruh app.
 /// Konsisten → sekali perbaiki, semua peta (rekam/detail/jelajah) ikut sembuh.
 /// [dark] = gaya Dark Matter, enak untuk gowes malam (keuntungan PRO).
@@ -31,8 +45,9 @@ TileLayer osmTiles({bool dark = false}) {
     fallbackUrl: _fallbackUrl,
     userAgentPackageName: _appPackage,
     // Jangan spam terminal saat offline / 403: cukup fallback yang tampil.
-    // ignore: avoid_print
-    errorTileCallback: (tile, error, stack) {},
+    // Error-nya dicatat ke [mapTileErrorCount] agar UI bisa menjelaskan
+    // dengan badge, bukan layar abu-abu misterius.
+    errorTileCallback: (tile, error, stack) => recordMapTileError(),
   );
 }
 
@@ -293,36 +308,50 @@ class MapZoomButtons extends StatelessWidget {
   }
 }
 
-/// Hint offline yang ramah: muncul di atas peta saat tile gagal.
-/// Dipakai di Track + Explore agar "blank" selalu ada penjelasannya.
+/// Badge penjelasan bila (dan hanya bila) tile peta gagal dimuat.
+/// Muncul dengan tombol tutup; geser/zoom memicu muat ulang otomatis.
 class MapOfflineHint extends StatelessWidget {
   const MapOfflineHint({super.key});
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: scheme.surface.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: scheme.outlineVariant),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.wifi_off_outlined,
-            size: 14, color: scheme.onSurfaceVariant),
-        const SizedBox(width: 6),
-        Flexible(
-          child: Text(
-            'Peta butuh internet — cek koneksi bila kosong',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: scheme.onSurfaceVariant),
+    return ValueListenableBuilder<int>(
+      valueListenable: mapTileErrorCount,
+      builder: (context, errors, _) {
+        if (errors < 3) return const SizedBox.shrink();
+        final scheme = Theme.of(context).colorScheme;
+        return Container(
+          padding: const EdgeInsets.only(left: 10, right: 4, top: 6, bottom: 6),
+          decoration: BoxDecoration(
+            color: scheme.surface.withValues(alpha: 0.95),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: scheme.outlineVariant),
           ),
-        ),
-      ]),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.wifi_off_outlined,
+                size: 14, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                'Peta gagal dimuat — cek internet lalu geser/zoom',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+            ),
+            InkWell(
+              customBorder: const CircleBorder(),
+              onTap: resetMapTileErrors,
+              child: const Padding(
+                padding: EdgeInsets.all(6),
+                child: Icon(Icons.close, size: 14),
+              ),
+            ),
+          ]),
+        );
+      },
     );
   }
 }

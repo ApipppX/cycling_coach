@@ -28,6 +28,23 @@ class _ShellState extends ConsumerState<HomeShell> {
     EventScreen(),
     ProfileScreen(),
   ];
+
+  /// Tab yang SUDAH pernah dibuka. IndexedStack di bawah me-build SEMUA
+  /// children di frame pertama — termasuk 2 peta + stream GPS — sehingga
+  /// di HP kentang Beranda lama muncul / terlihat blank. Dengan lazy ini
+  /// hanya Beranda yang dibangun saat start; tab lain dibangun saat
+  /// pertama dibuka, lalu tetap hidup (state tidak hilang).
+  final _built = <int>{0};
+
+  void _go(int i) => setState(() {
+        idx = i;
+        _built.add(i);
+      });
+
+  List<Widget> get _stackChildren => [
+        for (var i = 0; i < _pages.length; i++)
+          _built.contains(i) ? _pages[i] : const SizedBox.shrink(),
+      ];
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -44,7 +61,7 @@ class _ShellState extends ConsumerState<HomeShell> {
                 NavigationRail(
                   selectedIndex: idx,
                   extended: extended,
-                  onDestinationSelected: (i) => setState(() => idx = i),
+                  onDestinationSelected: _go,
                   labelType: extended
                       ? NavigationRailLabelType.none
                       : NavigationRailLabelType.all,
@@ -83,17 +100,17 @@ class _ShellState extends ConsumerState<HomeShell> {
                 const VerticalDivider(width: 1),
                 Expanded(
                   child:
-                      IndexedStack(index: idx, children: _pages),
+                      IndexedStack(index: idx, children: _stackChildren),
                 ),
               ],
             ),
           );
         }
         return Scaffold(
-          body: IndexedStack(index: idx, children: _pages),
+          body: IndexedStack(index: idx, children: _stackChildren),
           bottomNavigationBar: NavigationBar(
             selectedIndex: idx,
-            onDestinationSelected: (i) => setState(() => idx = i),
+            onDestinationSelected: _go,
             destinations: const [
               NavigationDestination(
                   icon: Icon(Icons.home_outlined),
