@@ -117,7 +117,7 @@ class _TrackState extends ConsumerState<TrackScreen> {
                 .surfaceContainerHighest
                 .withValues(alpha: 0.6),
             child: Text(
-              'GPS foreground aktif saat merekam. Kunci layar lama bisa menghentikan update di sebagian HP — biarkan app di depan untuk hasil terbaik.',
+              'Perekaman jalan di latar (notifikasi "Merekam…") — boleh kunci layar / buka app lain. Matikan optimasi baterai untuk app ini bila rekaman masih putus di HP-mu.',
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodySmall,
@@ -154,6 +154,41 @@ class _TrackState extends ConsumerState<TrackScreen> {
                   ),
               ]),
             ),
+            // Banner bila fix GPS macet >30 dtk saat merekam (mis. GPS HP
+            // mati / service dibunuh). Ticker 1 dtk me-rebuild sehingga
+            // kondisi ini dievaluasi live.
+            if (t.status == TrackStatus.recording &&
+                t.lastEventMs > 0 &&
+                DateTime.now().millisecondsSinceEpoch - t.lastEventMs >
+                    30000)
+              Positioned(
+                top: 52,
+                left: 10,
+                right: 10,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .errorContainer,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    'Sinyal GPS terputus >30 dtk — pastikan GPS menyala dan app dikecualikan dari optimasi baterai.',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onErrorContainer,
+                            fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
             // Tombol follow / recenter + zoom ala GMaps.
             if (live)
               Positioned(

@@ -6,7 +6,9 @@ plugins {
 
 android {
     namespace = "com.apipppx.cyclingcoach"
-    compileSdk = flutter.compileSdkVersion
+    // 37 karena permission_handler_android butuh compileSdk 37.
+    // targetSdk tetap ikut Flutter (perilaku runtime tidak berubah).
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
