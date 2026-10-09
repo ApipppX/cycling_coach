@@ -48,8 +48,8 @@ dependencies:
   flutter_animate: ^4.5.2
   # --- Strava-like GPS + maps (Leaflet-style via OpenStreetMap) ---
   # flutter_map renders OSM raster tiles (same stack Leaflet.js uses on web).
-  flutter_map: ^7.0.0
-  latlong2: ^0.9.1
+  flutter_map: 8.3.2
+  latlong2: 0.10.1
   geolocator: ^13.0.4
   # --- GMaps-like explore: place search (Nominatim) + bike routing (OSRM) ---
   http: ^1.2.2

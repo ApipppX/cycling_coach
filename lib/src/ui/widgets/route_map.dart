@@ -4,21 +4,28 @@ import 'package:latlong2/latlong.dart';
 import '../../models/models.dart';
 import '../../core/geo_utils.dart';
 
-/// Tile OSM primer (stack yang sama dipakai Leaflet.js di web).
-/// flutter_map sama dengan Leaflet untuk Flutter: TileLayer + Polyline + Marker.
+/// Tile primer CARTO Light + fallback OSM (stack yang sama dipakai
+/// Leaflet.js di web). flutter_map = "Leaflet untuk Flutter".
+///
+/// Kenapa CARTO duluan (bukan OSM langsung)?
+/// - flutter_map v8 nge-log warning tiap TileLayer menembak server tile
+///   publik OSM; pakai CARTO sebagai primer = nol banner di terminal.
+/// - OSM tetap jadi fallback bila CARTO limit/gagal.
+/// - v8 sudah membatalkan request tile basi secara native (pengganti
+///   plugin cancellable yang discontinued) → peta web lebih cepat.
 ///
 /// PENTING (bug peta blank di HP):
 /// - Android WAJIB punya `INTERNET` permission di AndroidManifest.
 ///   Tanpa itu tile gagal dimuat → abu-abu + log "flutter_map" berulang.
-/// - OSM kadang rate-limit (403). [fallbackUrl] Carto Light memastikan
-///   peta tetap tampil walau OSM menolak.
-/// - [errorTileCallback] dikosongkan agar terminal tidak dispam stacktrace
-///   per-tile; user cukup lihat peta fallback / tombol muat ulang.
-const _osmUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-const _darkUrl =
-    'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
-const _fallbackUrl =
+/// - CARTO/OSM kadang rate-limit (403/429). [fallbackUrl] memastikan
+///   peta tetap tampil bila server primer menolak.
+/// - Error tile dicatat ke [mapTileErrorCount] (terminal tetap senyap);
+///   badge offline hanya muncul bila tile gagal beneran.
+const _cartoLightUrl =
     'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
+const _cartoDarkUrl =
+    'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
+const _osmUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 const _osmAttribution = '© OpenStreetMap · © CARTO';
 const _appPackage = 'com.apipppx.cyclingcoach';
 
@@ -41,8 +48,8 @@ void resetMapTileErrors() => mapTileErrorCount.value = 0;
 /// [dark] = gaya Dark Matter, enak untuk gowes malam (keuntungan PRO).
 TileLayer osmTiles({bool dark = false}) {
   return TileLayer(
-    urlTemplate: dark ? _darkUrl : _osmUrl,
-    fallbackUrl: _fallbackUrl,
+    urlTemplate: dark ? _cartoDarkUrl : _cartoLightUrl,
+    fallbackUrl: _osmUrl,
     userAgentPackageName: _appPackage,
     // Jangan spam terminal saat offline / 403: cukup fallback yang tampil.
     // Error-nya dicatat ke [mapTileErrorCount] agar UI bisa menjelaskan

@@ -12,13 +12,13 @@ import '../data/prefs.dart';
 ///
 /// TODO SEBELUM RILIS:
 /// - Ganti [donateUrl] dengan link Saweria/Trakteer/QRIS kamu (1 baris).
-/// - [storeUrl] otomatis ikut applicationId final (bukan com.example.* lagi).
+/// - [storeUrl] mengarah ke GitHub Releases sampai app terbit di Play
+///   Store (link Play sekarang masih 404) — ganti ke link Play saat rilis.
 /// - Ganti [donorCodes] dengan kode acak kamu sendiri.
 const donateUrl = 'https://saweria.co/TODO-GANTI-USERNAME';
-const storeUrl =
-    'https://play.google.com/store/apps/details?id=com.apipppx.cyclingcoach';
+const storeUrl = 'https://github.com/ApipppX/cycling_coach/releases';
 const shareText =
-    'Coba CyclingCoach — pelatih sepeda pribadi + GPS ala Strava, gratis! $storeUrl';
+    'Coba CyclingCoach — pelatih sepeda pribadi + GPS ala Strava, gratis! Download: $storeUrl';
 
 /// Kode donasi demo. Format bebas; cocokkan case-insensitive, spasi diabaikan.
 const donorCodes = <String>{'GOWES-PRO-2026', 'TERIMAKASIH'};
