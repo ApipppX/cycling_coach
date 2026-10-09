@@ -97,6 +97,30 @@ class $CyclingActivitiesTable extends CyclingActivities
     requiredDuringInsert: false,
     defaultValue: const Constant(''),
   );
+  static const VerificationMeta _routeJsonMeta = const VerificationMeta(
+    'routeJson',
+  );
+  @override
+  late final GeneratedColumn<String> routeJson = GeneratedColumn<String>(
+    'route_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _durationSecMeta = const VerificationMeta(
+    'durationSec',
+  );
+  @override
+  late final GeneratedColumn<double> durationSec = GeneratedColumn<double>(
+    'duration_sec',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -107,6 +131,8 @@ class $CyclingActivitiesTable extends CyclingActivities
     startDate,
     averageHeartRate,
     note,
+    routeJson,
+    durationSec,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -184,6 +210,21 @@ class $CyclingActivitiesTable extends CyclingActivities
         note.isAcceptableOrUnknown(data['note']!, _noteMeta),
       );
     }
+    if (data.containsKey('route_json')) {
+      context.handle(
+        _routeJsonMeta,
+        routeJson.isAcceptableOrUnknown(data['route_json']!, _routeJsonMeta),
+      );
+    }
+    if (data.containsKey('duration_sec')) {
+      context.handle(
+        _durationSecMeta,
+        durationSec.isAcceptableOrUnknown(
+          data['duration_sec']!,
+          _durationSecMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -225,6 +266,14 @@ class $CyclingActivitiesTable extends CyclingActivities
         DriftSqlType.string,
         data['${effectivePrefix}note'],
       )!,
+      routeJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}route_json'],
+      )!,
+      durationSec: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}duration_sec'],
+      )!,
     );
   }
 
@@ -243,6 +292,8 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
   final String startDate;
   final double averageHeartRate;
   final String note;
+  final String routeJson;
+  final double durationSec;
   const ActivityRow({
     required this.id,
     required this.name,
@@ -252,6 +303,8 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
     required this.startDate,
     required this.averageHeartRate,
     required this.note,
+    required this.routeJson,
+    required this.durationSec,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -264,6 +317,8 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
     map['start_date'] = Variable<String>(startDate);
     map['average_heart_rate'] = Variable<double>(averageHeartRate);
     map['note'] = Variable<String>(note);
+    map['route_json'] = Variable<String>(routeJson);
+    map['duration_sec'] = Variable<double>(durationSec);
     return map;
   }
 
@@ -277,6 +332,8 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       startDate: Value(startDate),
       averageHeartRate: Value(averageHeartRate),
       note: Value(note),
+      routeJson: Value(routeJson),
+      durationSec: Value(durationSec),
     );
   }
 
@@ -296,6 +353,8 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       startDate: serializer.fromJson<String>(json['startDate']),
       averageHeartRate: serializer.fromJson<double>(json['averageHeartRate']),
       note: serializer.fromJson<String>(json['note']),
+      routeJson: serializer.fromJson<String>(json['routeJson']),
+      durationSec: serializer.fromJson<double>(json['durationSec']),
     );
   }
   @override
@@ -310,6 +369,8 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       'startDate': serializer.toJson<String>(startDate),
       'averageHeartRate': serializer.toJson<double>(averageHeartRate),
       'note': serializer.toJson<String>(note),
+      'routeJson': serializer.toJson<String>(routeJson),
+      'durationSec': serializer.toJson<double>(durationSec),
     };
   }
 
@@ -322,6 +383,8 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
     String? startDate,
     double? averageHeartRate,
     String? note,
+    String? routeJson,
+    double? durationSec,
   }) => ActivityRow(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -331,6 +394,8 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
     startDate: startDate ?? this.startDate,
     averageHeartRate: averageHeartRate ?? this.averageHeartRate,
     note: note ?? this.note,
+    routeJson: routeJson ?? this.routeJson,
+    durationSec: durationSec ?? this.durationSec,
   );
   ActivityRow copyWithCompanion(CyclingActivitiesCompanion data) {
     return ActivityRow(
@@ -348,6 +413,10 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
           ? data.averageHeartRate.value
           : this.averageHeartRate,
       note: data.note.present ? data.note.value : this.note,
+      routeJson: data.routeJson.present ? data.routeJson.value : this.routeJson,
+      durationSec: data.durationSec.present
+          ? data.durationSec.value
+          : this.durationSec,
     );
   }
 
@@ -361,7 +430,9 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
           ..write('averageSpeed: $averageSpeed, ')
           ..write('startDate: $startDate, ')
           ..write('averageHeartRate: $averageHeartRate, ')
-          ..write('note: $note')
+          ..write('note: $note, ')
+          ..write('routeJson: $routeJson, ')
+          ..write('durationSec: $durationSec')
           ..write(')'))
         .toString();
   }
@@ -376,6 +447,8 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
     startDate,
     averageHeartRate,
     note,
+    routeJson,
+    durationSec,
   );
   @override
   bool operator ==(Object other) =>
@@ -388,7 +461,9 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
           other.averageSpeed == this.averageSpeed &&
           other.startDate == this.startDate &&
           other.averageHeartRate == this.averageHeartRate &&
-          other.note == this.note);
+          other.note == this.note &&
+          other.routeJson == this.routeJson &&
+          other.durationSec == this.durationSec);
 }
 
 class CyclingActivitiesCompanion extends UpdateCompanion<ActivityRow> {
@@ -400,6 +475,8 @@ class CyclingActivitiesCompanion extends UpdateCompanion<ActivityRow> {
   final Value<String> startDate;
   final Value<double> averageHeartRate;
   final Value<String> note;
+  final Value<String> routeJson;
+  final Value<double> durationSec;
   const CyclingActivitiesCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
@@ -409,6 +486,8 @@ class CyclingActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     this.startDate = const Value.absent(),
     this.averageHeartRate = const Value.absent(),
     this.note = const Value.absent(),
+    this.routeJson = const Value.absent(),
+    this.durationSec = const Value.absent(),
   });
   CyclingActivitiesCompanion.insert({
     this.id = const Value.absent(),
@@ -419,6 +498,8 @@ class CyclingActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     required String startDate,
     this.averageHeartRate = const Value.absent(),
     this.note = const Value.absent(),
+    this.routeJson = const Value.absent(),
+    this.durationSec = const Value.absent(),
   }) : name = Value(name),
        distance = Value(distance),
        totalElevationGain = Value(totalElevationGain),
@@ -433,6 +514,8 @@ class CyclingActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     Expression<String>? startDate,
     Expression<double>? averageHeartRate,
     Expression<String>? note,
+    Expression<String>? routeJson,
+    Expression<double>? durationSec,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -444,6 +527,8 @@ class CyclingActivitiesCompanion extends UpdateCompanion<ActivityRow> {
       if (startDate != null) 'start_date': startDate,
       if (averageHeartRate != null) 'average_heart_rate': averageHeartRate,
       if (note != null) 'note': note,
+      if (routeJson != null) 'route_json': routeJson,
+      if (durationSec != null) 'duration_sec': durationSec,
     });
   }
 
@@ -456,6 +541,8 @@ class CyclingActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     Value<String>? startDate,
     Value<double>? averageHeartRate,
     Value<String>? note,
+    Value<String>? routeJson,
+    Value<double>? durationSec,
   }) {
     return CyclingActivitiesCompanion(
       id: id ?? this.id,
@@ -466,6 +553,8 @@ class CyclingActivitiesCompanion extends UpdateCompanion<ActivityRow> {
       startDate: startDate ?? this.startDate,
       averageHeartRate: averageHeartRate ?? this.averageHeartRate,
       note: note ?? this.note,
+      routeJson: routeJson ?? this.routeJson,
+      durationSec: durationSec ?? this.durationSec,
     );
   }
 
@@ -496,6 +585,12 @@ class CyclingActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     if (note.present) {
       map['note'] = Variable<String>(note.value);
     }
+    if (routeJson.present) {
+      map['route_json'] = Variable<String>(routeJson.value);
+    }
+    if (durationSec.present) {
+      map['duration_sec'] = Variable<double>(durationSec.value);
+    }
     return map;
   }
 
@@ -509,7 +604,9 @@ class CyclingActivitiesCompanion extends UpdateCompanion<ActivityRow> {
           ..write('averageSpeed: $averageSpeed, ')
           ..write('startDate: $startDate, ')
           ..write('averageHeartRate: $averageHeartRate, ')
-          ..write('note: $note')
+          ..write('note: $note, ')
+          ..write('routeJson: $routeJson, ')
+          ..write('durationSec: $durationSec')
           ..write(')'))
         .toString();
   }
@@ -1113,6 +1210,8 @@ typedef $$CyclingActivitiesTableCreateCompanionBuilder =
       required String startDate,
       Value<double> averageHeartRate,
       Value<String> note,
+      Value<String> routeJson,
+      Value<double> durationSec,
     });
 typedef $$CyclingActivitiesTableUpdateCompanionBuilder =
     CyclingActivitiesCompanion Function({
@@ -1124,6 +1223,8 @@ typedef $$CyclingActivitiesTableUpdateCompanionBuilder =
       Value<String> startDate,
       Value<double> averageHeartRate,
       Value<String> note,
+      Value<String> routeJson,
+      Value<double> durationSec,
     });
 
 class $$CyclingActivitiesTableFilterComposer
@@ -1172,6 +1273,16 @@ class $$CyclingActivitiesTableFilterComposer
 
   ColumnFilters<String> get note => $composableBuilder(
     column: $table.note,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get routeJson => $composableBuilder(
+    column: $table.routeJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get durationSec => $composableBuilder(
+    column: $table.durationSec,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -1224,6 +1335,16 @@ class $$CyclingActivitiesTableOrderingComposer
     column: $table.note,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get routeJson => $composableBuilder(
+    column: $table.routeJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get durationSec => $composableBuilder(
+    column: $table.durationSec,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$CyclingActivitiesTableAnnotationComposer
@@ -1264,6 +1385,14 @@ class $$CyclingActivitiesTableAnnotationComposer
 
   GeneratedColumn<String> get note =>
       $composableBuilder(column: $table.note, builder: (column) => column);
+
+  GeneratedColumn<String> get routeJson =>
+      $composableBuilder(column: $table.routeJson, builder: (column) => column);
+
+  GeneratedColumn<double> get durationSec => $composableBuilder(
+    column: $table.durationSec,
+    builder: (column) => column,
+  );
 }
 
 class $$CyclingActivitiesTableTableManager
@@ -1310,6 +1439,8 @@ class $$CyclingActivitiesTableTableManager
                 Value<String> startDate = const Value.absent(),
                 Value<double> averageHeartRate = const Value.absent(),
                 Value<String> note = const Value.absent(),
+                Value<String> routeJson = const Value.absent(),
+                Value<double> durationSec = const Value.absent(),
               }) => CyclingActivitiesCompanion(
                 id: id,
                 name: name,
@@ -1319,6 +1450,8 @@ class $$CyclingActivitiesTableTableManager
                 startDate: startDate,
                 averageHeartRate: averageHeartRate,
                 note: note,
+                routeJson: routeJson,
+                durationSec: durationSec,
               ),
           createCompanionCallback:
               ({
@@ -1330,6 +1463,8 @@ class $$CyclingActivitiesTableTableManager
                 required String startDate,
                 Value<double> averageHeartRate = const Value.absent(),
                 Value<String> note = const Value.absent(),
+                Value<String> routeJson = const Value.absent(),
+                Value<double> durationSec = const Value.absent(),
               }) => CyclingActivitiesCompanion.insert(
                 id: id,
                 name: name,
@@ -1339,6 +1474,8 @@ class $$CyclingActivitiesTableTableManager
                 startDate: startDate,
                 averageHeartRate: averageHeartRate,
                 note: note,
+                routeJson: routeJson,
+                durationSec: durationSec,
               ),
           withReferenceMapper: (p0) => p0
               .map(

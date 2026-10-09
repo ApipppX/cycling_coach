@@ -5,10 +5,14 @@ import '../../core/coach_engine.dart';
 import '../../core/health_stats.dart';
 import '../../providers/providers.dart';
 import '../../data/prefs.dart';
+import '../../core/geo_utils.dart';
 import '../widgets/activity_form.dart';
 import '../widgets/common.dart';
+import '../widgets/elev_chart.dart';
 import '../widgets/responsive.dart';
+import '../widgets/route_map.dart';
 import '../theme/app_theme.dart';
+import 'track_screen.dart' show shareGpx;
 
 class DetailScreen extends ConsumerWidget {
   final CyclingActivity activity;
@@ -20,6 +24,14 @@ class DetailScreen extends ConsumerWidget {
     final kcal = estimateCaloriesKcal(activity, prefs.weightKg);
     final trimp = trimpOf(activity, prefs.maxHr);
     final zone = hrZoneName(activity.averageHeartRate, prefs.maxHr);
+    // Statistik turunan GPS (Strava-like). Sesi manual → list kosong,
+    // UI otomatis fallback ke tabel ringkas di bawah.
+    final routePts = decodeRoute(activity.routeJson);
+    final hasGps = routePts.length >= 2;
+    final elev = hasGps ? elevationSamples(routePts) : const <ElevSample>[];
+    final splits = hasGps ? computeSplits(routePts) : const <KmSplit>[];
+    final maxKmh = hasGps ? maxSpeedMs(routePts) * 3.6 : 0.0;
+    final lossM = hasGps ? routeElevationLoss(routePts) : 0.0;
     final rows = <List<String>>[
       ['Tanggal', formatDateShort(activity.startDate)],
       ['Jarak', '${activity.distanceKm.toStringAsFixed(2)} km'],
@@ -70,6 +82,73 @@ class DetailScreen extends ConsumerWidget {
       ),
       body: ResponsiveList(
         children: [
+          // Peta rute GPS (Strava-like). Sesi manual → placeholder ramah.
+          RouteMap(routeJson: activity.routeJson, height: 230),
+          const SizedBox(height: AppSpacing.sm),
+          if (activity.hasRoute)
+            AppButton(
+              icon: Icons.share_outlined,
+              label:
+                  'Bagikan GPX (${decodeRoute(activity.routeJson).length} titik)',
+              tonal: true,
+              onPressed: () => shareGpx(context, activity.name,
+                  activity.routeJson, activity.startDate),
+            ),
+          const SizedBox(height: AppSpacing.sm),
+          // --- Ringkasan ala Strava: tiles + grafik elevasi + splits/km ---
+          if (hasGps) ...[
+            AppStatsGrid(children: [
+              StatTile(activity.distanceKm.toStringAsFixed(2), 'Jarak (km)',
+                  icon: Icons.route_outlined),
+              StatTile(
+                  activity.durationMin >= 60
+                      ? '${(activity.durationMin ~/ 60)}j ${activity.durationMin.round() % 60}m'
+                      : '${activity.durationMin.toStringAsFixed(0)} mnt',
+                  'Durasi',
+                  icon: Icons.timer_outlined),
+              StatTile(activity.speedKmh.toStringAsFixed(1), 'Avg km/h',
+                  icon: Icons.speed_outlined),
+              if (maxKmh > 0)
+                StatTile(maxKmh.toStringAsFixed(1), 'Max km/h',
+                    icon: Icons.bolt_outlined),
+              StatTile(
+                  '+${activity.totalElevationGain.toStringAsFixed(0)}',
+                  'Elevasi (m)',
+                  icon: Icons.terrain_outlined,
+                  sub: lossM > 0
+                      ? '−${lossM.toStringAsFixed(0)} m turun'
+                      : null),
+              StatTile(kcal.toStringAsFixed(0), 'Kalori (kkal)',
+                  icon: Icons.local_fire_department_outlined),
+            ]),
+            const SizedBox(height: AppSpacing.sm),
+            ElevProfileChart(samples: elev),
+            if (splits.isNotEmpty) ...[
+              const SectionTitle('Split per km'),
+              ScrollTable(
+                headers: const ['KM', 'WAKTU', 'KEC', 'ELEV'],
+                flexes: const [2, 3, 3, 3],
+                rows: [
+                  for (final s in splits)
+                    [
+                      Text(s.index.toString(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                      Text(_fmtSplit(s.seconds),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                      Text('${s.avgKmh.toStringAsFixed(1)} km/h',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                      Text('+${s.elevGainM.toStringAsFixed(0)} m',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                    ],
+                ],
+              ),
+            ],
+            const SizedBox(height: AppSpacing.sm),
+          ],
           Card(
             clipBehavior: Clip.antiAlias,
             child: Padding(
@@ -140,6 +219,13 @@ class DetailScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// mm:ss (atau h:mm:ss bila ≥1 jam) untuk tabel split/km.
+String _fmtSplit(int sec) {
+  final h = sec ~/ 3600, m = (sec % 3600) ~/ 60, s = sec % 60;
+  String p2(int n) => n.toString().padLeft(2, '0');
+  return h > 0 ? '$h:${p2(m)}:${p2(s)}' : '${p2(m)}:${p2(s)}';
 }
 
 class EvaluationScreen extends ConsumerWidget {
