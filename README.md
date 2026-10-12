@@ -6,8 +6,9 @@ auto-pause, rute tersimpan per sesi, ekspor GPX, analisis beban sport-science
 
 ## Fitur
 
-- **Beranda**: target mingguan, riwayat + cari/sort/hapus massal, badge 🗺 GPS,
-  impor & contoh CSV, tombol **Rekam GPS** + **Manual**.
+- **Beranda**: target mingguan, riwayat + cari/sort (Terbaru/Terjauh/Tercepat)/
+  hapus massal, badge 🗺 GPS, impor & contoh CSV, speed-dial **Rekam GPS** +
+  **Manual** + **Impor CSV**.
 - **Rekam GPS** (Strava-like, **background service v2 — tetap jalan saat
   layar mati / app di-background**):
   - Peta live **OpenStreetMap via `flutter_map`** (stack yang sama dengan Leaflet.js di web:
@@ -31,12 +32,22 @@ auto-pause, rute tersimpan per sesi, ekspor GPX, analisis beban sport-science
   **split per km** (KM tercepat di-highlight ⚡), peta rute (pin start hijau +
   finish), tombol **Bagikan GPX** (impor ke Strava/Garmin), durasi real GPS,
   TRIMP, evaluasi sesi.
+- **Jelajah** (pengganti GMaps, tanpa API key): kolom **Dari** (default
+  **Posisi saya**) + **Ke**, tukar ⇅, tap peta + reverse-geocode nama jalan,
+  rute sepeda OSRM bicycle + fallback FOSSGIS, **Mulai** (navigasi in-app:
+  follow + sisa jarak/ETA + auto-sampai), **Rekam**, **GPX**, **Ulangi**,
+  **GMaps** eksternal. Lihat §C2.
+- **CyclingCoach Pro** (nol-rupiah via kode donasi di paywall): PDF bersih
+  tanpa footer promo, gaya peta Gelap untuk gowes malam (Rekam + Jelajah),
+  lencana PRO di Profil. Inti app (rekam/coach/statistik) tetap gratis.
 - **Coach AI**: rekomendasi hari ini (rest/easy/interval/tempo/long/taper/event),
   CTL/ATL/TSB, freshness, mix sesi, peringatan overreach/monotoni/deload.
 - **Statistik**: lifetime totals, grafik 8 minggu / 6 bulan / 3 tahun, tren,
   distribusi zona HR, rekor & streak.
-- **Event**: kesiapan %, plan harian + progres, kalkulator ETA Anti-COT + timer live.
-- **Profil**: nama/umur/berat/target, MaxHR, tema, backup/restore JSON (termasuk rute GPS), hapus data.
+- **Event**: **Kesiapan: %**, **Progres plan**, **Jadwal latihan**, tombol
+  **Kalkulator ETA Anti-COT** + Timer live.
+- **Profil**: nama/umur/berat/target, MaxHR, tema, **CyclingCoach Pro**,
+  backup/restore JSON (termasuk rute GPS), bagikan app, hapus data.
 
 ## Cara pakai GPS (Strava-like, background)
 
@@ -46,7 +57,7 @@ auto-pause, rute tersimpan per sesi, ekspor GPX, analisis beban sport-science
    Nyalakan GPS HP.
 3. Tunggu chip akurasi `±… m` kecil (<15 m ideal), tekan **Mulai Rekam**.
    Muncul notifikasi permanen `● Merekam … km` = service latar hidup.
-4. Gowes. Peta mengikuti (tombol 🎯 untuk on/off follow). Diam = auto-pause.
+4. Gowes. Peta mengikuti (tombol lokasi untuk on/off follow). Diam = auto-pause.
    **Boleh kunci layar / buka WA / kantongi HP** — rekaman tetap jalan.
 5. **Jeda** bila istirahat warung, **Lanjut** setelahnya, **Selesai** di finish.
 6. Isi nama/HR/catatan (jarak/waktu/elevasi/kalori/max/avg-gerak sudah
@@ -75,7 +86,7 @@ auto-pause, rute tersimpan per sesi, ekspor GPX, analisis beban sport-science
 | Kode siap dites | Yakin tak ada error | `flutter analyze` (harus No issues) + `flutter test` (44 hijau) |
 | Mau coba di HP | App jalan di Android | Colok HP (USB debugging ON) → `flutter run` → pilih device |
 | Tak ada HP | Coba di laptop | `flutter run` → pilih **Chrome** (peta + DB jalan; GPS = lokasi kasar browser) atau **Windows** (butuh Developer Mode ON untuk symlink plugin) |
-| Buka app pertama kali | Onboarding selesai | Isi nama + umur → MaxHR otomatis `220−umur` → masuk Beranda |
+| Buka app pertama kali | Onboarding selesai | Isi nama + umur + berat → preview `MaxHR otomatis: X bpm` (`220−umur`) → **Mulai Berlatih** → Beranda |
 
 ### B. Rekam gowes pakai GPS — langkah demi langkah
 
@@ -112,11 +123,12 @@ Tab **Jelajah** = GMaps mini khusus sepeda, semua gratis tanpa key
    otomatis digambar + jarak & estimasi waktu. Server primer OSRM,
    fallback FOSSGIS bila primer down.
 4. **Mulai** = navigasi DI DALAM app (peta mengikuti posisimu, banner sisa
-   jarak + ETA live, berhenti otomatis saat sampai <40 m). Tak perlu GMaps.
+   jarak + ETA live, berhenti otomatis saat sampai <40 m, tombol **Berhenti**
+   untuk batal). Tak perlu GMaps.
 5. **Rekam** = buka layar Rekam GPS (catat gowes sambil ikuti rute).
 6. **GPX** = bagikan rute rencana (impor ke Strava/Garmin/head unit).
-7. **GMaps** = buka rute di Google Maps (opsi eksternal bila butuh
-   turn-by-turn suara).
+7. **Ulangi** = hitung ulang rute; **GMaps** = buka rute di Google Maps
+   (opsi eksternal bila butuh turn-by-turn suara).
 
 ### D. Backup / restore — kapan pakai apa
 
@@ -129,11 +141,12 @@ Tab **Jelajah** = GMaps mini khusus sepeda, semua gratis tanpa key
 
 ### E. Event & Anti-COT — alur hari-H
 
-Tab **Event** → isi nama + tanggal + target km → lihat **kesiapan %** + plan
-harian (centang progres) → hari-H buka kalkulator **Anti-COT**: isi target,
-COT, jam start, lalu tiap pos update KM + **HITUNG** (verdict AMAN/WASPADA/OVER
-+ pace dibutuhkan + tabel checkpoint). Nyalakan **Timer live** agar waktu
-berjalan sendiri.
+Tab **Event** → isi nama + tanggal + target km → lihat **Kesiapan: %** +
+**Progres plan** + **Jadwal latihan (N hari)** (centang progres) → hari-H buka
+tombol **Kalkulator ETA Anti-COT**: isi target, COT, jam start, lalu tiap pos
+update KM + **HITUNG PREDIKSI** (verdict AMAN/WASPADA/OVER + pace dibutuhkan +
+tabel checkpoint). Nyalakan **Timer live** (jadi **Live ON**) agar waktu
+berjalan sendiri tiap 30 dtk.
 
 ## Troubleshooting (masalah → sebab → obat)
 
@@ -233,6 +246,8 @@ core/health_stats.dart       → Estimasi kalori + lifetimeTotals.
 core/csv_utils.dart          → Build/parse CSV riwayat (kompat 7/8/9 kolom legacy).
 core/backup.dart             → Export/import JSON v1 (activities+events+prefs;
                                activities kini bawa routeJson+durationSec).
+core/premium.dart            → Pro nol-rupiah via kode donasi (cth `GOWES-PRO-2026`);
+                               perks: PDF bersih, peta Gelap, lencana PRO. Dites.
 core/eta_predictor.dart      → Kalkulator Anti-COT: proyeksi finis, pace dibutuhkan,
                                verdict AMAN/WASPADA/OVER, checkpoint per X km.
 core/report_pdf.dart         → PDF mingguan (ringkasan 7 hari, CTL/ATL/TSB, zona,
@@ -241,9 +256,9 @@ providers/providers.dart     → dbProvider, activities/events/planChecks stream
                                coachAnalysisProvider (dihitung sekali per perubahan).
 ui/app.dart                  → MaterialApp + tema + onboarding gate.
 ui/theme/app_theme.dart      → Light/dark, spacing, warna Strava-ish.
-ui/screens/home_shell.dart   → 7 tab: Beranda/Rekam/Jelajah/Coach/Statistik/Event/Profil
-                               (Rail di lebar ≥800 lazy-IndexedStack agar Beranda instant,
-                               Bar di HP).
+ui/screens/home_shell.dart   → 7 tab: Beranda/Rekam/Jelajah/Coach AI/Statistik/Event/Profil
+                               (Rail tablet; Bar HP: Coach, Stats. Lazy-IndexedStack
+                               agar Beranda instant di HP kentang).
 ui/screens/dashboard_screen → Target, search/sort/hapus massal, CSV, kartu riwayat
                                (+badge GPS), FAB ganda Rekam GPS/Manual.
                                FIX: Contoh-CSV kini Row+Expanded (bukan Wrap+Flexible
@@ -285,8 +300,10 @@ ui/widgets/route_map.dart    → osmTiles() SATU-SATUNYA sumber tile: primer
                                RouteMap + LiveTrackMap + zoom + MapOfflineHint.
 ui/widgets/elev_chart.dart   → NEW. ElevProfileChart ala Strava (area + min/max
                                + tooltip km/m; placeholder bila tanpa altitude).
-ui/widgets/activity_form.dart → Dialog tambah/edit (jarak/durasi/kecepatan saling
-                               isi; edit TIDAK menghapus routeJson GPS).
+ui/widgets/activity_form.dart → Dialog **Tambah/Edit Latihan** (jarak/durasi/kecepatan saling
+                               isi; tombol **Simpan & Evaluasi**; edit TIDAK menghapus routeJson GPS).
+ui/widgets/pro_paywall.dart  → Bottom-sheet **CyclingCoach Pro** (manfaat + input kode
+                               donasi + **Buka Pro**; gratis inti tetap jalan).
 ui/widgets/common.dart       → SectionTitle, AppTextField, AppSectionCard, AppButton,
                                showAppConfirm, showAppSnack, EmptyState, AppLoading,
                                AppError, AppStatsGrid, StatTile, ScrollTable.
