@@ -1,4 +1,7 @@
+import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:cycling_coach/src/core/places_api.dart';
 import 'package:cycling_coach/src/core/premium.dart';
@@ -48,5 +51,92 @@ void main() {
     expect(mapTileErrorCount.value, greaterThanOrEqualTo(3));
     resetMapTileErrors();
     expect(mapTileErrorCount.value, 0);
+  });
+
+  test('fetchBikeRoute parse OSRM primer (tanpa key)', () async {
+    final body = json.encode({
+      'routes': [
+        {
+          'distance': 5200.0,
+          'duration': 1560.0,
+          'geometry': {
+            'coordinates': [
+              [106.8, -6.2],
+              [106.81, -6.21],
+              [106.82, -6.22],
+            ],
+          },
+        },
+      ],
+    });
+    final client = MockClient((req) async {
+      expect(req.url.host, 'router.project-osrm.org');
+      expect(req.url.path, contains('bicycle'));
+      return http.Response(body, 200);
+    });
+    final r = await fetchBikeRoute(
+        const LatLng(-6.2, 106.8), const LatLng(-6.22, 106.82),
+        client: client);
+    expect(r, isNotNull);
+    expect(r!.points.length, 3);
+    expect(r.distanceKm, closeTo(5.2, 0.01));
+  });
+
+  test('fetchBikeRoute fallback ke server kedua bila primer gagal', () async {
+    final body = json.encode({
+      'routes': [
+        {
+          'distance': 3000.0,
+          'duration': 900.0,
+          'geometry': {
+            'coordinates': [
+              [106.8, -6.2],
+              [106.83, -6.23],
+            ],
+          },
+        },
+      ],
+    });
+    final client = MockClient((req) async {
+      if (req.url.host == 'router.project-osrm.org') {
+        return http.Response('down', 500);
+      }
+      expect(req.url.host, 'routing.openstreetmap.de');
+      return http.Response(body, 200);
+    });
+    final r = await fetchBikeRoute(
+        const LatLng(-6.2, 106.8), const LatLng(-6.23, 106.83),
+        client: client);
+    expect(r, isNotNull);
+    expect(r!.distanceKm, closeTo(3.0, 0.01));
+  });
+
+  test('fetchBikeRoute null bila dua server gagal', () async {
+    final client =
+        MockClient((_) async => http.Response('err', 500));
+    final r = await fetchBikeRoute(
+        const LatLng(-6.2, 106.8), const LatLng(-6.23, 106.83),
+        client: client);
+    expect(r, isNull);
+  });
+
+  test('reverseGeocode label jalan, fallback koordinat saat offline',
+      () async {
+    final ok = MockClient((req) async {
+      expect(req.url.host, 'nominatim.openstreetmap.org');
+      return http.Response(
+          json.encode({
+            'display_name':
+                'Jalan Sudirman, Jakarta Selatan, DKI Jakarta, Indonesia'
+          }),
+          200);
+    });
+    expect(
+        await reverseGeocode(const LatLng(-6.2, 106.8), client: ok),
+        contains('Jalan Sudirman'));
+    final down =
+        MockClient((_) async => http.Response('err', 500));
+    expect(await reverseGeocode(const LatLng(-6.2, 106.8), client: down),
+        contains('-6.2'));
   });
 }

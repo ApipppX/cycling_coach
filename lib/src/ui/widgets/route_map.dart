@@ -4,29 +4,33 @@ import 'package:latlong2/latlong.dart';
 import '../../models/models.dart';
 import '../../core/geo_utils.dart';
 
-/// Tile primer CARTO Light + fallback OSM (stack yang sama dipakai
-/// Leaflet.js di web). flutter_map = "Leaflet untuk Flutter".
+/// Tile murni OpenStreetMap TANPA API key (ala Leaflet.js default):
+/// primer `tile.openstreetmap.org`, fallback `tile.openstreetmap.fr/hot`.
+/// flutter_map = "Leaflet untuk Flutter" — template URL yang sama persis
+/// dengan `L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png')`
+/// di Leaflet web.
 ///
-/// Kenapa CARTO duluan (bukan OSM langsung)?
-/// - flutter_map v8 nge-log warning tiap TileLayer menembak server tile
-///   publik OSM; pakai CARTO sebagai primer = nol banner di terminal.
-/// - OSM tetap jadi fallback bila CARTO limit/gagal.
-/// - v8 sudah membatalkan request tile basi secara native (pengganti
-///   plugin cancellable yang discontinued) → peta web lebih cepat.
+/// Kenapa BUKAN CARTO lagi?
+/// - `*.basemaps.cartocdn.com` kini mengembalikan tile
+///   "API KEY REQUIRED" (butuh apikey CARTO berbayar) — peta jadi putih
+///   dengan watermark diagonal, persis seperti laporan user.
+/// - OSM standar + HOT 100% gratis tanpa key, hanya butuh User-Agent
+///   yang benar (dikirim via [userAgentPackageName]).
+///
+/// Mode gelap TANPA key: pakai filter bawaan flutter_map
+/// ([darkModeTileBuilder], inversi + rotasi hue 180°) di atas tile OSM
+/// yang sama — marker/polyline tidak ikut digelapkan (layer terpisah).
 ///
 /// PENTING (bug peta blank di HP):
 /// - Android WAJIB punya `INTERNET` permission di AndroidManifest.
 ///   Tanpa itu tile gagal dimuat → abu-abu + log "flutter_map" berulang.
-/// - CARTO/OSM kadang rate-limit (403/429). [fallbackUrl] memastikan
+/// - OSM kadang rate-limit (403/429). [fallbackUrl] memastikan
 ///   peta tetap tampil bila server primer menolak.
 /// - Error tile dicatat ke [mapTileErrorCount] (terminal tetap senyap);
 ///   badge offline hanya muncul bila tile gagal beneran.
-const _cartoLightUrl =
-    'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
-const _cartoDarkUrl =
-    'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
 const _osmUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-const _osmAttribution = '© OpenStreetMap · © CARTO';
+const _hotUrl = 'https://tile.openstreetmap.fr/hot/{z}/{x}/{y}.png';
+const _osmAttribution = '© OpenStreetMap contributors';
 const _appPackage = 'com.apipppx.cyclingcoach';
 
 /// Penghitung error tile global per sesi jalan-nya app.
@@ -45,12 +49,15 @@ void resetMapTileErrors() => mapTileErrorCount.value = 0;
 
 /// Satu-satunya konstruktor TileLayer yang dipakai seluruh app.
 /// Konsisten → sekali perbaiki, semua peta (rekam/detail/jelajah) ikut sembuh.
-/// [dark] = gaya Dark Matter, enak untuk gowes malam (keuntungan PRO).
+/// [dark] = filter gelap bawaan flutter_map di atas tile OSM yang sama
+/// (tanpa server/API key tambahan) — enak untuk gowes malam (keuntungan PRO).
 TileLayer osmTiles({bool dark = false}) {
   return TileLayer(
-    urlTemplate: dark ? _cartoDarkUrl : _cartoLightUrl,
-    fallbackUrl: _osmUrl,
+    urlTemplate: _osmUrl,
+    fallbackUrl: _hotUrl,
+    maxZoom: 19,
     userAgentPackageName: _appPackage,
+    tileBuilder: dark ? darkModeTileBuilder : null,
     // Jangan spam terminal saat offline / 403: cukup fallback yang tampil.
     // Error-nya dicatat ke [mapTileErrorCount] agar UI bisa menjelaskan
     // dengan badge, bukan layar abu-abu misterius.

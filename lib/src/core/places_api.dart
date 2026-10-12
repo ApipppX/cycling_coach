@@ -78,7 +78,8 @@ Future<List<PlaceResult>> searchPlaces(
   }
 }
 
-/// Rute sepeda ala GMaps directions (via OSRM demo, gratis tanpa API key).
+/// Rute sepeda ramah gowes (profil bicycle: hindari jalan tol/motorway,
+/// utamakan jalan yang boleh dilewati sepeda). Via OSRM, gratis tanpa key.
 class BikeRoute {
   final List<LatLng> points;
   final double distanceM;
@@ -97,19 +98,39 @@ class BikeRoute {
 }
 
 /// Minta rute sepeda [from] → [to]. Kembalikan null bila offline / tak ada jalan.
+///
+/// Mencoba dua server OSRM ramah-sepeda (keduanya gratis tanpa API key):
+/// 1. `router.project-osrm.org …/bicycle/…` (profil sepeda),
+/// 2. `routing.openstreetmap.de/routed-bike` (fallback FOSSGIS).
+/// Profil bicycle otomatis menghindari motorway/jalan tol.
 Future<BikeRoute?> fetchBikeRoute(LatLng from, LatLng to,
     {http.Client? client}) async {
   client ??= http.Client();
-  try {
-    // OSRM format: {lng},{lat};{lng},{lat}
-    final coords =
-        '${from.longitude},${from.latitude};${to.longitude},${to.latitude}';
-    final uri = Uri.https('router.project-osrm.org',
-        '/route/v1/bicycle/$coords', {
+  // OSRM format: {lng},{lat};{lng},{lat}
+  final coords =
+      '${from.longitude},${from.latitude};${to.longitude},${to.latitude}';
+  final servers = [
+    Uri.https('router.project-osrm.org', '/route/v1/bicycle/$coords', {
       'overview': 'full',
       'geometries': 'geojson',
       'steps': 'false',
-    });
+    }),
+    Uri.https('routing.openstreetmap.de', '/routed-bike/route/v1/driving/$coords', {
+      'overview': 'full',
+      'geometries': 'geojson',
+      'steps': 'false',
+    }),
+  ];
+  for (final uri in servers) {
+    final r = await _fetchOsrmRoute(uri, client);
+    if (r != null) return r;
+  }
+  return null;
+}
+
+/// Satu request OSRM → [BikeRoute]. Null bila gagal (server coba berikutnya).
+Future<BikeRoute?> _fetchOsrmRoute(Uri uri, http.Client client) async {
+  try {
     final res = await client
         .get(uri, headers: {
           'User-Agent': 'cycling_coach/1.0',
@@ -142,6 +163,41 @@ Future<BikeRoute?> fetchBikeRoute(LatLng from, LatLng to,
     );
   } catch (_) {
     return null;
+  }
+}
+
+/// Nama jalan/tempat untuk koordinat (label pin Dari/Tujuan dari tap peta).
+/// Via Nominatim reverse, gratis tanpa key. Tidak pernah throw — fallback
+/// ke `"lat, lng"` bila offline.
+Future<String> reverseGeocode(LatLng p, {http.Client? client}) async {
+  final fallback =
+      '${p.latitude.toStringAsFixed(5)}, ${p.longitude.toStringAsFixed(5)}';
+  client ??= http.Client();
+  try {
+    final uri = Uri.https('nominatim.openstreetmap.org', '/reverse', {
+      'format': 'jsonv2',
+      'lat': '${p.latitude}',
+      'lon': '${p.longitude}',
+      'zoom': '16',
+      'addressdetails': '1',
+      'accept-language': 'id',
+    });
+    final res = await client
+        .get(uri, headers: {
+          'User-Agent': 'cycling_coach/1.0 (contact: cyclingcoach.app)',
+          'Accept': 'application/json',
+        })
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) return fallback;
+    final decoded = json.decode(res.body);
+    if (decoded is! Map) return fallback;
+    final display = '${decoded['display_name'] ?? ''}';
+    if (display.isEmpty) return fallback;
+    final parts = display.split(',').map((s) => s.trim()).toList();
+    // Nama jalan + 1-2 wilayah, mis. "Jl. Sudirman, Jakarta Selatan".
+    return parts.take(3).join(', ');
+  } catch (_) {
+    return fallback;
   }
 }
 
