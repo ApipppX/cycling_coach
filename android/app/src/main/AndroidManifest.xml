@@ -3,7 +3,8 @@
          Tanpa ini peta blank + log "flutter_map: Failed to load tile". -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <!-- GPS tracking (Strava-like, foreground-only v1) -->
+    <!-- GPS tracking (Strava-like, foreground service agar tetap jalan
+         saat layar mati / app di-background) -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- Lacak saat layar mati: foreground service + izin lokasi latar. -->
@@ -11,6 +12,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Anti-putus saat layar mati: cegah CPU tidur + izinkan user
+         mengecualikan app dari optimasi baterai. Tanpa WAKE_LOCK,
+         sebagian HP (Xiaomi/Oppo/Vivo) mematikan GPS ~5 menit setelah
+         layar mati walau foreground service jalan. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
     <application
         android:label="CyclingCoach"

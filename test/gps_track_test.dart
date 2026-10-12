@@ -152,4 +152,34 @@ void main() {
     expect(manual.durationMin, closeTo(33.33, 0.1));
     expect(manual.hasRoute, isFalse);
   });
+
+  test('moving time + avg abaikan diam', () {
+    // 10 m/5 dtk (2 m/s = 7,2 km/h) lalu diam 60 dtk di tempat.
+    final pts = [
+      const GpsPoint(lat: -6.2, lng: 106.8, ele: 0, t: 0),
+      const GpsPoint(lat: -6.2, lng: 106.80009, ele: 0, t: 5000),
+      const GpsPoint(lat: -6.2, lng: 106.80009, ele: 0, t: 65000),
+    ];
+    expect(movingTimeSec(pts), closeTo(5, 0.5));
+    expect(movingAvgKmh(pts), closeTo(7.2, 0.6));
+  });
+
+  test('fastest split = avg tertinggi + ele min-maks', () {
+    final pts = List.generate(
+        231,
+        (i) => GpsPoint(
+            lat: -6.2,
+            lng: 106.8 + i * 10 / 110567.0,
+            ele: (i % 50).toDouble(),
+            t: i * 10000));
+    final splits = computeSplits(pts, 1.0);
+    final fast = fastestSplit(splits);
+    expect(fast, isNotNull);
+    expect(fast!.avgKmh,
+        splits.map((s) => s.avgKmh).reduce((a, b) => a > b ? a : b));
+    expect(fastestSplit(const []), isNull);
+    final mm = eleMinMax(pts);
+    expect(mm.max, greaterThan(mm.min));
+    expect(eleMinMax(const []).min, 0);
+  });
 }

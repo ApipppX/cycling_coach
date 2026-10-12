@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -379,8 +380,9 @@ class ProfileScreen extends ConsumerWidget {
       );
       final stamp =
           DateTime.now().toIso8601String().substring(0, 10);
+      final dir = await getTemporaryDirectory();
       final f =
-          File('${Directory.systemTemp.path}/cyclingcoach_backup_$stamp.json');
+          File('${dir.path}/cyclingcoach_backup_$stamp.json');
       await f.writeAsString(json);
       await SharePlus.instance.share(
           ShareParams(files: [XFile(f.path)], subject: 'Backup CyclingCoach'));
@@ -394,7 +396,20 @@ class ProfileScreen extends ConsumerWidget {
 
   Future<void> _importBackup(
       BuildContext context, WidgetRef ref) async {
-    final files = await FilePicker.pickFiles();
+    // v13: pickFiles() -> List<PlatformFile> (kosong bila Batal).
+    List<PlatformFile> files;
+    try {
+      files = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json', 'txt'],
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Gagal buka file: $e')));
+      }
+      return;
+    }
     if (files.isEmpty) return;
     final f = files.first;
     String text;

@@ -369,3 +369,42 @@ double movingAvgKmh(List<GpsPoint> pts, [double stillSpeedMs = 1.0]) {
   if (moveSec <= 0) return 0;
   return dist / moveSec * 3.6;
 }
+
+/// Estimasi waktu BERGERAK (detik): jumlah dt segmen dengan kecepatan
+/// >= [stillSpeedMs]. Dipakai untuk tile "Gerak" vs "Total" (elapsed)
+/// ala Strava — otomatis, tanpa input user.
+double movingTimeSec(List<GpsPoint> pts, [double stillSpeedMs = 1.0]) {
+  if (pts.length < 2) return 0;
+  var moveSec = 0.0;
+  for (var i = 1; i < pts.length; i++) {
+    final d = haversineM(
+        pts[i - 1].lat, pts[i - 1].lng, pts[i].lat, pts[i].lng);
+    final dt = (pts[i].t - pts[i - 1].t) / 1000.0;
+    if (dt <= 0 || dt > 300) continue;
+    if (d / dt >= stillSpeedMs) moveSec += dt;
+  }
+  return moveSec;
+}
+
+/// Split tercepat (kecepatan rata-rata tertinggi). Null bila tak ada split.
+/// Dipakai untuk banner "Terkencang KM X" + highlight baris tabel.
+KmSplit? fastestSplit(List<KmSplit> splits) {
+  if (splits.isEmpty) return null;
+  var best = splits.first;
+  for (final s in splits.skip(1)) {
+    if (s.avgKmh > best.avgKmh) best = s;
+  }
+  return best;
+}
+
+/// Min/maks elevasi mentah (meter) untuk ringkasan "di mana nanjak paling
+/// tinggi". Mengembalikan (0,0) bila tak ada data.
+({double min, double max}) eleMinMax(List<GpsPoint> pts) {
+  if (pts.isEmpty) return (min: 0, max: 0);
+  var lo = pts.first.ele, hi = pts.first.ele;
+  for (final p in pts.skip(1)) {
+    if (p.ele < lo) lo = p.ele;
+    if (p.ele > hi) hi = p.ele;
+  }
+  return (min: lo, max: hi);
+}

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../models/models.dart';
 import '../../core/coach_engine.dart';
@@ -131,12 +132,20 @@ class _DashState extends ConsumerState<DashboardScreen> {
                 icon: const Icon(Icons.share),
                 tooltip: 'Bagikan CSV',
                 onPressed: () async {
-                  final f = File(
-                      '${Directory.systemTemp.path}/cyclingcoach_riwayat.csv');
-                  await f.writeAsString(buildActivitiesCsv(acts));
-                  await SharePlus.instance.share(ShareParams(
-                      files: [XFile(f.path)],
-                      subject: 'Riwayat Latihan'));
+                  try {
+                    final dir = await getTemporaryDirectory();
+                    final f = File(
+                        '${dir.path}/cyclingcoach_riwayat.csv');
+                    await f.writeAsString(buildActivitiesCsv(acts));
+                    await SharePlus.instance.share(ShareParams(
+                        files: [XFile(f.path)],
+                        subject: 'Riwayat Latihan'));
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Gagal bagikan: $e')));
+                    }
+                  }
                 }),
             IconButton(
                 icon: const Icon(Icons.flag),
@@ -200,7 +209,9 @@ class _DashState extends ConsumerState<DashboardScreen> {
       ),
       body: RefreshIndicator(
         onRefresh: () async => ref.invalidate(activitiesProvider),
-        child: ResponsiveList(children: [
+        child: ResponsiveList(
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: [
         Row(children: [
           Expanded(
             child: Text(
@@ -269,23 +280,33 @@ class _DashState extends ConsumerState<DashboardScreen> {
             ),
           ]),
         ),
-        Wrap(
-          spacing: AppSpacing.sm,
-          crossAxisAlignment: WrapCrossAlignment.center,
+        // FIX(abu-abu di HP): JANGAN pakai Flexible di dalam Wrap
+        // (ParentDataWidget ilegal → layout gagal → area abu-abu kosong di
+        // release mode HP). Pakai Row + Expanded yang legal di Flex.
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             TextButton.icon(
               icon: const Icon(Icons.download, size: 16),
               label: const Text('Contoh CSV'),
               onPressed: () async {
-                final f = File(
-                    '${Directory.systemTemp.path}/contoh_cyclingcoach.csv');
-                await f.writeAsString(_sampleCsv);
-                await SharePlus.instance.share(ShareParams(
-                    files: [XFile(f.path)],
-                    subject: 'Contoh CSV CyclingCoach'));
+                try {
+                  final dir = await getTemporaryDirectory();
+                  final f = File(
+                      '${dir.path}/contoh_cyclingcoach.csv');
+                  await f.writeAsString(_sampleCsv);
+                  await SharePlus.instance.share(ShareParams(
+                      files: [XFile(f.path)],
+                      subject: 'Contoh CSV CyclingCoach'));
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Gagal bagikan: $e')));
+                  }
+                }
               },
             ),
-            Flexible(
+            Expanded(
               child: Text(
                   'Format: nama,tanggal,jarak,elevasi,kecepatan,HR,catatan',
                   maxLines: 2,
@@ -420,8 +441,21 @@ class _DashState extends ConsumerState<DashboardScreen> {
   }
 
   Future<void> _importCsv() async {
-    final files = await FilePicker.pickFiles();
-    if (files.isEmpty) return;
+    // v13: pickFiles() -> List<PlatformFile> (kosong bila Batal, tak null).
+    List<PlatformFile> files;
+    try {
+      files = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['csv', 'txt'],
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Gagal buka file: $e')));
+      }
+      return;
+    }
+    if (files.isEmpty) return; // user Batal: diam
     final f = files.first;
     String text;
     try {

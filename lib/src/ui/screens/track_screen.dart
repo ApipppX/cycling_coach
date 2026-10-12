@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../core/geo_utils.dart';
 import '../../core/premium.dart';
@@ -96,13 +97,18 @@ class _TrackState extends ConsumerState<TrackScreen> {
         ],
       ),
       body: Column(children: [
-        // Banner akurasi / status.
+        // Banner akurasi / status. Bila error TAPI ada titik (service
+        // dibunuh OS), tawarkan Simpan — data tidak hilang.
         if (t.status == TrackStatus.error)
           MaterialBanner(
             content: Text(t.message,
                 maxLines: 3, overflow: TextOverflow.ellipsis),
             leading: const Icon(Icons.warning_amber_rounded),
             actions: [
+              if (t.points.length >= 2)
+                TextButton(
+                    onPressed: () => _finishFlow(context, ref),
+                    child: const Text('Simpan')),
               TextButton(
                   onPressed: () => rec.discard(),
                   child: const Text('Tutup')),
@@ -116,11 +122,21 @@ class _TrackState extends ConsumerState<TrackScreen> {
                 .colorScheme
                 .surfaceContainerHighest
                 .withValues(alpha: 0.6),
-            child: Text(
-              'Perekaman jalan di latar (notifikasi "Merekam…") — boleh kunci layar / buka app lain. Matikan optimasi baterai untuk app ini bila rekaman masih putus di HP-mu.',
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Perekaman jalan di latar (notifikasi "● Merekam…") — boleh kunci layar / buka app lain. Bila masih putus, kecualikan app dari optimasi baterai.',
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+                TextButton(
+                  onPressed: rec.openBatterySettings,
+                  child: const Text('Buka Pengaturan'),
+                ),
+              ],
             ),
           ),
         Expanded(
@@ -236,48 +252,72 @@ class _TrackState extends ConsumerState<TrackScreen> {
             ),
           ]),
         ),
-        // Panel statistik live.
+        // Panel statistik live — SEMUA otomatis: jarak, waktu, kec.kini,
+        // elevasi gain, max, avg-gerak. Titik GPS + jam mulai sebagai caption.
         Container(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
           child: Column(children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _LiveStat(
-                    value: t.distanceKm.toStringAsFixed(2),
-                    label: 'Jarak (km)'),
-                _LiveStat(
-                    value: _fmtClock(t.elapsedSec), label: 'Waktu'),
-                _LiveStat(
-                    value: t.currentKmh > 0.5
-                        ? t.currentKmh.toStringAsFixed(1)
-                        : (t.elapsedSec > 0
-                            ? (t.distanceM / t.elapsedSec * 3.6)
-                                .toStringAsFixed(1)
-                            : '0.0'),
-                    label: 'Kec (km/h)'),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _LiveStat(
-                    value: '${t.elevationGainM.toStringAsFixed(0)} m',
-                    label: 'Elevasi',
-                    small: true),
-                _LiveStat(
-                    value: '${t.points.length} titik',
-                    label: 'GPS',
-                    small: true),
-                _LiveStat(
-                    value: t.startedAt == null
-                        ? '-'
-                        : '${t.startedAt!.hour.toString().padLeft(2, '0')}:${t.startedAt!.minute.toString().padLeft(2, '0')}',
-                    label: 'Mulai',
-                    small: true),
-              ],
-            ),
+            Builder(builder: (context) {
+              // Hitung turunan live (max + avg-gerak) — O(n) tiap build,
+              // aman untuk <20 rb titik dengan update tiap ~5 dtk.
+              final liveMaxKmh = t.points.length >= 2
+                  ? maxSpeedMs(t.points) * 3.6
+                  : 0.0;
+              final liveMoveKmh = t.points.length >= 2
+                  ? movingAvgKmh(t.points)
+                  : 0.0;
+              final avgKmh = t.elapsedSec > 0
+                  ? t.distanceM / t.elapsedSec * 3.6
+                  : 0.0;
+              return Column(children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _LiveStat(
+                        value: t.distanceKm.toStringAsFixed(2),
+                        label: 'Jarak (km)'),
+                    _LiveStat(
+                        value: _fmtClock(t.elapsedSec), label: 'Waktu'),
+                    _LiveStat(
+                        value: t.currentKmh > 0.5
+                            ? t.currentKmh.toStringAsFixed(1)
+                            : avgKmh.toStringAsFixed(1),
+                        label: 'Kec (km/h)'),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _LiveStat(
+                        value: '${t.elevationGainM.toStringAsFixed(0)} m',
+                        label: 'Elevasi gain',
+                        small: true),
+                    _LiveStat(
+                        value: liveMaxKmh > 0
+                            ? liveMaxKmh.toStringAsFixed(1)
+                            : '-',
+                        label: 'Max (km/h)',
+                        small: true),
+                    _LiveStat(
+                        value: liveMoveKmh > 0
+                            ? liveMoveKmh.toStringAsFixed(1)
+                            : avgKmh.toStringAsFixed(1),
+                        label: 'Avg gerak',
+                        small: true),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${t.points.length} titik GPS'
+                  '${t.startedAt == null ? '' : ' • mulai ${t.startedAt!.hour.toString().padLeft(2, '0')}:${t.startedAt!.minute.toString().padLeft(2, '0')}'}'
+                  '${t.status == TrackStatus.paused ? ' • auto/manual jeda: jarak berhenti' : ''}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ]);
+            }),
           ]),
         ),
         // Kontrol rekaman.
@@ -297,15 +337,67 @@ class _TrackState extends ConsumerState<TrackScreen> {
     final rec = ref.read(trackRecorderProvider.notifier);
     switch (t.status) {
       case TrackStatus.idle:
-      case TrackStatus.error:
       case TrackStatus.finished:
+        return Column(mainAxisSize: MainAxisSize.min, children: [
+          AppButton(
+            icon: Icons.fiber_manual_record,
+            label: t.status == TrackStatus.finished
+                ? 'Rekam Lagi'
+                : 'Mulai Rekam',
+            onPressed: () async {
+              if (t.status == TrackStatus.finished) rec.discard();
+              await rec.start();
+            },
+          ),
+          // Pulihkan backup bila ada sesi terputus (HP mati / dibunuh OS).
+          FutureBuilder<bool>(
+            future: rec.restoreInterruptedDryRun(),
+            builder: (context, snap) {
+              if (snap.data != true) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: FilledButton.tonalIcon(
+                  icon: const Icon(Icons.restore_outlined, size: 18),
+                  label: const Text('Pulihkan rekaman terputus'),
+                  onPressed: () async {
+                    final ok = await rec.restoreInterrupted();
+                    if (!ok && context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content: Text(
+                                  'Tak ada backup yang bisa dipulihkan.')));
+                    }
+                  },
+                ),
+              );
+            },
+          ),
+        ]);
+      case TrackStatus.error:
+        // Error DENGAN data = tawarkan Simpan dulu (jangan buang!).
+        if (t.points.length >= 2) {
+          return Column(mainAxisSize: MainAxisSize.min, children: [
+            AppButton(
+              icon: Icons.save_outlined,
+              label:
+                  'Simpan Hasil (${t.distanceKm.toStringAsFixed(2)} km)',
+              onPressed: () => _finishFlow(context, ref),
+            ),
+            const SizedBox(height: 8),
+            FilledButton.tonalIcon(
+              icon: const Icon(Icons.fiber_manual_record, size: 18),
+              label: const Text('Buang & Rekam Lagi'),
+              onPressed: () async {
+                rec.discard();
+                await rec.start();
+              },
+            ),
+          ]);
+        }
         return AppButton(
           icon: Icons.fiber_manual_record,
-          label: t.status == TrackStatus.finished
-              ? 'Rekam Lagi'
-              : 'Mulai Rekam',
+          label: 'Mulai Rekam',
           onPressed: () async {
-            if (t.status == TrackStatus.finished) rec.discard();
             await rec.start();
           },
         );
@@ -612,9 +704,17 @@ Future<void> shareGpx(
   final gpx = buildGpx(name, pts, start);
   final safe =
       name.replaceAll(RegExp(r'[^\w\- ]+'), '').trim().replaceAll(' ', '_');
-  final f = File(
-      '${Directory.systemTemp.path}/${safe.isEmpty ? 'route' : safe}.gpx');
-  await f.writeAsString(gpx);
-  await SharePlus.instance
-      .share(ShareParams(files: [XFile(f.path)], subject: 'Rute GPX $name'));
+  try {
+    final dir = await getTemporaryDirectory();
+    final f = File(
+        '${dir.path}/${safe.isEmpty ? 'route' : safe}.gpx');
+    await f.writeAsString(gpx);
+    await SharePlus.instance
+        .share(ShareParams(files: [XFile(f.path)], subject: 'Rute GPX $name'));
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Gagal bagikan GPX: $e')));
+    }
+  }
 }

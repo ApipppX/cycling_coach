@@ -24,25 +24,53 @@ class DetailScreen extends ConsumerWidget {
     final kcal = estimateCaloriesKcal(activity, prefs.weightKg);
     final trimp = trimpOf(activity, prefs.maxHr);
     final zone = hrZoneName(activity.averageHeartRate, prefs.maxHr);
-    // Statistik turunan GPS (Strava-like). Sesi manual → list kosong,
-    // UI otomatis fallback ke tabel ringkas di bawah.
+    // Statistik turunan GPS (Strava-like) — SEMUA otomatis dari rute,
+    // tanpa input user. Sesi manual → list kosong, UI fallback ke tabel.
     final routePts = decodeRoute(activity.routeJson);
     final hasGps = routePts.length >= 2;
     final elev = hasGps ? elevationSamples(routePts) : const <ElevSample>[];
     final splits = hasGps ? computeSplits(routePts) : const <KmSplit>[];
     final maxKmh = hasGps ? maxSpeedMs(routePts) * 3.6 : 0.0;
     final lossM = hasGps ? routeElevationLoss(routePts) : 0.0;
+    final moveKmh = hasGps ? movingAvgKmh(routePts) : 0.0;
+    final moveSec = hasGps ? movingTimeSec(routePts).round() : 0;
+    final fast = hasGps ? fastestSplit(splits) : null;
+    final eleMM = hasGps ? eleMinMax(routePts) : (min: 0.0, max: 0.0);
+    String fmtDur(double min) {
+      if (min <= 0) return '-';
+      if (min >= 60) return '${(min ~/ 60)}j ${min.round() % 60}m';
+      return '${min.toStringAsFixed(0)} mnt';
+    }
+
     final rows = <List<String>>[
       ['Tanggal', formatDateShort(activity.startDate)],
       ['Jarak', '${activity.distanceKm.toStringAsFixed(2)} km'],
       [
-        'Durasi',
+        'Durasi total',
         activity.durationMin > 0
-            ? '${activity.durationMin.toStringAsFixed(0)} mnt'
+            ? fmtDur(activity.durationMin)
             : '-'
       ],
-      ['Kecepatan', '${activity.speedKmh.toStringAsFixed(1)} km/h'],
-      ['Elevasi', '${activity.totalElevationGain.toInt()} m'],
+      if (hasGps && moveSec > 0)
+        ['Waktu gerak', fmtDur(moveSec / 60.0)],
+      ['Kecepatan avg', '${activity.speedKmh.toStringAsFixed(1)} km/h'],
+      if (hasGps && moveKmh > 0)
+        ['Avg gerak', '${moveKmh.toStringAsFixed(1)} km/h'],
+      if (hasGps && maxKmh > 0)
+        ['Max', '${maxKmh.toStringAsFixed(1)} km/h'],
+      if (hasGps && fast != null)
+        [
+          'Terkencang',
+          'KM ${fast.index} • ${fast.avgKmh.toStringAsFixed(1)} km/h'
+        ],
+      ['Elevasi naik', '${activity.totalElevationGain.toStringAsFixed(0)} m'],
+      if (hasGps && lossM > 0)
+        ['Elevasi turun', '${lossM.toStringAsFixed(0)} m'],
+      if (hasGps && eleMM.max > eleMM.min)
+        [
+          'Elev min–maks',
+          '${eleMM.min.toStringAsFixed(0)}–${eleMM.max.toStringAsFixed(0)} m'
+        ],
       [
         'HR rata-rata',
         activity.averageHeartRate > 0
@@ -104,13 +132,20 @@ class DetailScreen extends ConsumerWidget {
                   activity.durationMin >= 60
                       ? '${(activity.durationMin ~/ 60)}j ${activity.durationMin.round() % 60}m'
                       : '${activity.durationMin.toStringAsFixed(0)} mnt',
-                  'Durasi',
+                  'Durasi total',
                   icon: Icons.timer_outlined),
               StatTile(activity.speedKmh.toStringAsFixed(1), 'Avg km/h',
                   icon: Icons.speed_outlined),
+              if (moveKmh > 0)
+                StatTile(moveKmh.toStringAsFixed(1), 'Avg gerak',
+                    icon: Icons.directions_bike_outlined,
+                    sub: moveSec > 0
+                        ? '${(moveSec ~/ 60)} mnt gerak'
+                        : null),
               if (maxKmh > 0)
                 StatTile(maxKmh.toStringAsFixed(1), 'Max km/h',
-                    icon: Icons.bolt_outlined),
+                    icon: Icons.bolt_outlined,
+                    sub: fast != null ? 'KM ${fast.index}' : null),
               StatTile(
                   '+${activity.totalElevationGain.toStringAsFixed(0)}',
                   'Elevasi (m)',
@@ -121,6 +156,30 @@ class DetailScreen extends ConsumerWidget {
               StatTile(kcal.toStringAsFixed(0), 'Kalori (kkal)',
                   icon: Icons.local_fire_department_outlined),
             ]),
+            // Banner "di mana tercepat": KM tercepat otomatis dari splits.
+            if (fast != null) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Card(
+                color: Theme.of(context)
+                    .colorScheme
+                    .primaryContainer
+                    .withValues(alpha: 0.7),
+                child: ListTile(
+                  leading: Icon(Icons.bolt_outlined,
+                      color: Theme.of(context).colorScheme.primary),
+                  title: Text(
+                      'Terkencang: KM ${fast.index} • ${fast.avgKmh.toStringAsFixed(1)} km/h',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style:
+                          const TextStyle(fontWeight: FontWeight.w800)),
+                  subtitle: Text(
+                      '${_fmtSplit(fast.seconds)} • +${fast.elevGainM.toStringAsFixed(0)} m elev pada KM itu',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                ),
+              ),
+            ],
             const SizedBox(height: AppSpacing.sm),
             ElevProfileChart(samples: elev),
             if (splits.isNotEmpty) ...[
@@ -131,15 +190,38 @@ class DetailScreen extends ConsumerWidget {
                 rows: [
                   for (final s in splits)
                     [
-                      Text(s.index.toString(),
+                      Text(
+                          s.index.toString() +
+                              (fast != null && s.index == fast.index
+                                  ? ' ⚡'
+                                  : ''),
                           maxLines: 1,
-                          overflow: TextOverflow.ellipsis),
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontWeight: fast != null &&
+                                      s.index == fast.index
+                                  ? FontWeight.w800
+                                  : FontWeight.w600,
+                              color: fast != null &&
+                                      s.index == fast.index
+                                  ? Theme.of(context).colorScheme.primary
+                                  : null)),
                       Text(_fmtSplit(s.seconds),
                           maxLines: 1,
-                          overflow: TextOverflow.ellipsis),
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontWeight: fast != null &&
+                                      s.index == fast.index
+                                  ? FontWeight.w800
+                                  : FontWeight.w600)),
                       Text('${s.avgKmh.toStringAsFixed(1)} km/h',
                           maxLines: 1,
-                          overflow: TextOverflow.ellipsis),
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontWeight: fast != null &&
+                                      s.index == fast.index
+                                  ? FontWeight.w800
+                                  : FontWeight.w600)),
                       Text('+${s.elevGainM.toStringAsFixed(0)} m',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis),

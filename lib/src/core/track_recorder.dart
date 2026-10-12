@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../models/models.dart';
 import 'geo_utils.dart';
+import 'track_service.dart' show loadTrackBackup, clearTrackBackup;
 
 /// Status perekaman GPS (mesin state sederhana ala Strava).
 enum TrackStatus { idle, locating, recording, paused, finished, error }
@@ -178,6 +179,69 @@ class TrackRecorder extends Notifier<TrackState> {
     } catch (_) {}
   }
 
+  /// Buka pengaturan app (untuk "Kecualikan dari optimasi baterai" manual
+  /// di Xiaomi/Oppo/Vivo yang tetap membunuh service walau izin diberikan).
+  Future<void> openBatterySettings() async {
+    try {
+      await Permission.ignoreBatteryOptimizations.request();
+    } catch (_) {}
+    try {
+      await openAppSettings();
+    } catch (_) {}
+  }
+
+  /// Pulihkan sesi terputus (HP mati / OS membunuh service) dari backup
+  /// disk. Mengembalikan true bila ada backup dan state dipulihkan sebagai
+  /// paused — user tinggal Lanjut / Selesai+Simpan. Aman dipanggil saat
+  /// idle saja; tidak menimpa sesi berjalan.
+  Future<bool> restoreInterrupted() async {
+    if (state.status != TrackStatus.idle &&
+        state.status != TrackStatus.error) {
+      return false;
+    }
+    final b = await loadTrackBackup();
+    if (b == null) return false;
+    final pts = b.pts;
+    if (pts.length < 2) return false;
+    final dist = routeDistanceM(pts);
+    final gain = routeElevationGain(pts);
+    final last = pts.last;
+    state = TrackState(
+      status: TrackStatus.paused,
+      message:
+          'Dipulihkan dari backup (${(dist / 1000).toStringAsFixed(2)} km). Lanjut atau Selesai+Simpan.',
+      points: pts,
+      distanceM: dist,
+      elapsedSec: b.elapsedSec,
+      movingSec: b.movingSec,
+      currentSpeedMs: 0,
+      avgSpeedMs: b.elapsedSec > 0 ? dist / b.elapsedSec : 0,
+      elevationGainM: gain,
+      currentLat: last.lat,
+      currentLng: last.lng,
+      accuracyM: 0,
+      autoPause: state.autoPause,
+      startedAt: b.startedAt,
+      lastEventMs: DateTime.now().millisecondsSinceEpoch,
+    );
+    // Service lama sudah mati — lanjutkan di foreground agar tak hilang.
+    _useBg = false;
+    _startWall = DateTime.now().subtract(Duration(seconds: b.elapsedSec));
+    _pausedTotalSec = 0;
+    _pauseBegan = DateTime.now();
+    return true;
+  }
+
+  /// Cek ringan untuk tombol "Pulihkan" (tanpa mengubah state).
+  Future<bool> restoreInterruptedDryRun() async {
+    if (state.status != TrackStatus.idle &&
+        state.status != TrackStatus.finished) {
+      return false;
+    }
+    final b = await loadTrackBackup();
+    return b != null && b.pts.length >= 2;
+  }
+
   Future<void> start() async {
     state = state.copyWith(status: TrackStatus.locating, message: 'Mencari GPS…');
     if (!await ensurePermission()) return;
@@ -224,11 +288,15 @@ class TrackRecorder extends Notifier<TrackState> {
       return;
     }
     // Service mati tak terduga (dibunuh OS) saat sesi lokal masih jalan.
+    // PENTING: titik-titik dipertahankan (copyWith) agar user tetap bisa
+    // Selesai+Simpan — jangan buang data. Backup disk juga tersedia.
     if (m['recording'] != true) {
+      final hasData = state.points.length >= 2;
       state = state.copyWith(
         status: TrackStatus.error,
-        message:
-            'Pelacakan latar berhenti (HP mematikan app). Ketuk "Rekam Lagi" untuk sesi baru.',
+        message: hasData
+            ? 'Pelacakan latar berhenti (HP mematikan app). Data ${state.points.length} titik AMAN — ketuk Selesai+Simpan di bawah.'
+            : 'Pelacakan latar berhenti (HP mematikan app). Ketuk "Rekam Lagi" untuk sesi baru.',
       );
       _useBg = false;
       _ticker?.cancel();
@@ -525,6 +593,7 @@ class TrackRecorder extends Notifier<TrackState> {
     try {
       _svc.invoke('stop');
     } catch (_) {}
+    unawaited(clearTrackBackup());
     _sub?.cancel();
     _ticker?.cancel();
     _sub = null;
@@ -538,6 +607,7 @@ class TrackRecorder extends Notifier<TrackState> {
     try {
       _svc.invoke('stop');
     } catch (_) {}
+    unawaited(clearTrackBackup());
     _sub?.cancel();
     _ticker?.cancel();
     _sub = null;

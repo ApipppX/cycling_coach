@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ui';
 
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/models.dart';
 import 'geo_utils.dart';
@@ -14,6 +16,93 @@ import 'geo_utils.dart';
 
 /// ID kanal notifikasi perekaman (muncul permanen saat merekam).
 const trackNotifChannelId = 'cycling_track';
+
+/// Kunci backup anti-hilang: salinan sesi berjalan yang ditulis service
+/// tiap ~15 dtk / 50 titik. Bila HP mati / OS membunuh service, UI bisa
+/// memulihkan titik-titik ini (status paused) sehingga user tetap bisa
+/// Simpan — tidak hilang total.
+const trackBackupKey = 'track_backup_v1';
+
+/// Tulis backup sesi berjalan (dipanggil service latar, throttled).
+/// Disengaja best-effort: gagal tulis = abaikan, rekaman tetap jalan.
+Future<void> saveTrackBackup({
+  required List<GpsPoint> pts,
+  required int elapsedSec,
+  required int movingSec,
+  required int startedAtMs,
+}) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    // Cap 10000 titik (~300 KB JSON) agar tulis tetap cepat di HP kentang.
+    final capped = pts.length > 10000
+        ? pts.sublist(pts.length - 10000)
+        : pts;
+    final map = {
+      'v': 1,
+      'savedAtMs': DateTime.now().millisecondsSinceEpoch,
+      'elapsed': elapsedSec,
+      'moving': movingSec,
+      'startedAtMs': startedAtMs,
+      'pts': [
+        for (final p in capped) [p.lat, p.lng, p.ele, p.t],
+      ],
+    };
+    await prefs.setString(trackBackupKey, json.encode(map));
+  } catch (_) {}
+}
+
+/// Baca backup (dipanggil UI). Null bila tak ada / rusak / basi (>72 jam).
+Future<({List<GpsPoint> pts, int elapsedSec, int movingSec, DateTime? startedAt})?>
+    loadTrackBackup() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(trackBackupKey);
+    if (raw == null || raw.isEmpty) return null;
+    final m = json.decode(raw);
+    if (m is! Map) return null;
+    final savedAt = (m['savedAtMs'] as num?)?.toInt() ?? 0;
+    if (savedAt <= 0 ||
+        DateTime.now().millisecondsSinceEpoch - savedAt > 72 * 3600 * 1000) {
+      return null;
+    }
+    final rawPts = m['pts'] as List? ?? const [];
+    final pts = <GpsPoint>[];
+    for (final n in rawPts) {
+      if (n is List && n.length >= 2) {
+        final lat = (n[0] as num?)?.toDouble();
+        final lng = (n[1] as num?)?.toDouble();
+        if (lat == null || lng == null) continue;
+        if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
+        pts.add(GpsPoint(
+          lat: lat,
+          lng: lng,
+          ele: n.length > 2 ? ((n[2] as num?)?.toDouble() ?? 0) : 0,
+          t: n.length > 3 ? ((n[3] as num?)?.toInt() ?? 0) : 0,
+        ));
+      }
+      if (pts.length >= 10000) break;
+    }
+    if (pts.length < 2) return null;
+    final startedMs = (m['startedAtMs'] as num?)?.toInt() ?? 0;
+    return (
+      pts: pts,
+      elapsedSec: (m['elapsed'] as num?)?.toInt() ?? 0,
+      movingSec: (m['moving'] as num?)?.toInt() ?? 0,
+      startedAt: startedMs > 0
+          ? DateTime.fromMillisecondsSinceEpoch(startedMs)
+          : null,
+    );
+  } catch (_) {
+    return null;
+  }
+}
+
+Future<void> clearTrackBackup() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(trackBackupKey);
+  } catch (_) {}
+}
 
 /// Inisialisasi sekali di main() (khusus mobile; aman dipanggil di mana saja).
 Future<void> initializeTrackService() async {
@@ -100,6 +189,7 @@ class _BgEngine {
   double _lastAcc = 0;
   double _lastSpeedMs = 0;
   int _notifCount = 0;
+  int _lastPersistMs = 0;
 
   _BgEngine(this._service);
 
@@ -126,6 +216,9 @@ class _BgEngine {
     _curLat = null;
     _curLng = null;
     _notifCount = 0;
+    _lastPersistMs = 0;
+    // Sesi baru = backup lama tak berlaku lagi.
+    unawaited(clearTrackBackup());
     // Fix cepat agar peta UI langsung punya titik tengah.
     Geolocator.getLastKnownPosition().then((last) {
       if (last != null && _recording) {
@@ -214,6 +307,19 @@ class _BgEngine {
     final snap = snapshot(newPts: appended ? [_pts.last] : const []);
     _push(snap);
     if (appended) _notify(snap);
+    // Backup anti-hilang (throttled): tiap 50 titik ATAU 15 dtk.
+    if (appended && _pts.length >= 2) {
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      if (_pts.length % 50 == 0 || nowMs - _lastPersistMs > 15000) {
+        _lastPersistMs = nowMs;
+        unawaited(saveTrackBackup(
+          pts: List.of(_pts),
+          elapsedSec: snap['elapsed'] as int,
+          movingSec: snap['moving'] as int,
+          startedAtMs: _startWall?.millisecondsSinceEpoch ?? 0,
+        ));
+      }
+    }
   }
 
   void pause() {
@@ -245,6 +351,8 @@ class _BgEngine {
     _sub = null;
     _recording = false;
     _paused = false;
+    // Sesi selesai/dibuang user = backup tak diperlukan lagi.
+    unawaited(clearTrackBackup());
     try {
       _service.stopSelf();
     } catch (_) {}
