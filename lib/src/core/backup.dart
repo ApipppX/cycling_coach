@@ -21,6 +21,8 @@ String exportBackupJson({
           'startDate': a.startDate,
           'averageHeartRate': a.averageHeartRate,
           'note': a.note,
+          'routeJson': a.routeJson,
+          'durationSec': a.durationSec,
         },
     ],
     'events': [
@@ -75,6 +77,9 @@ String exportBackupJson({
           startDate: date,
           averageHeartRate: ((item['averageHeartRate'] as num?)?.toDouble() ?? 0).clamp(0, 220),
           note: (item['note'] ?? '').toString(),
+          // Backup lama (v1 tanpa rute) tetap terbaca: default ''/0.
+          routeJson: (item['routeJson'] ?? '').toString(),
+          durationSec: ((item['durationSec'] as num?)?.toDouble() ?? 0).clamp(0, 86400),
         ));
       } catch (_) {
         skipped++;

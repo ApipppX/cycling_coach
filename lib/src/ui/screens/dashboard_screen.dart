@@ -1,7 +1,9 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../models/models.dart';
 import '../../core/coach_engine.dart';
@@ -16,6 +18,7 @@ import '../widgets/responsive.dart';
 import '../widgets/zone_chip.dart';
 import '../theme/app_theme.dart';
 import 'session_screens.dart';
+import 'track_screen.dart';
 
 const _sampleCsv = '''id,nama,tanggal,jarak_km,elevasi_m,kecepatan_kmh,hr_bpm,catatan
 ,Gowes Pagi,2026-09-01,25.50,150,25.0,140,"Rute biasa, angin sepoi"
@@ -28,11 +31,35 @@ class DashboardScreen extends ConsumerStatefulWidget {
   ConsumerState<DashboardScreen> createState() => _DashState();
 }
 
+/// Tombol mini di menu speed-dial dashboard (GPS/Manual/CSV).
+class _FabMini extends StatelessWidget {
+  final String heroTag;
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  const _FabMini(
+      {required this.heroTag,
+      required this.icon,
+      required this.label,
+      required this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    return FloatingActionButton.extended(
+      heroTag: heroTag,
+      icon: Icon(icon),
+      label: Text(label),
+      onPressed: onTap,
+    ).animate().fadeIn(duration: 150.ms).scale(
+        begin: const Offset(0.85, 0.85), curve: Curves.easeOut);
+  }
+}
+
 class _DashState extends ConsumerState<DashboardScreen> {
   String query = '';
   SortMode sort = SortMode.terbaru;
   bool selectionMode = false;
   Set<int> selected = {};
+  bool _fabOpen = false;
 
   @override
   Widget build(BuildContext context) {
@@ -56,6 +83,7 @@ class _DashState extends ConsumerState<DashboardScreen> {
     }
     final acts = actsAsync.value ?? [];
     final weekKm = weekKmOf(acts);
+    final streak = computeWeekStreak(acts);
     final sisa = (prefs.weeklyTargetKm - weekKm).clamp(0, 1e9);
     final subInsight = sisa <= 0
         ? 'Target tercapai! Pertahankan momentum.'
@@ -104,12 +132,20 @@ class _DashState extends ConsumerState<DashboardScreen> {
                 icon: const Icon(Icons.share),
                 tooltip: 'Bagikan CSV',
                 onPressed: () async {
-                  final f = File(
-                      '${Directory.systemTemp.path}/cyclingcoach_riwayat.csv');
-                  await f.writeAsString(buildActivitiesCsv(acts));
-                  await SharePlus.instance.share(ShareParams(
-                      files: [XFile(f.path)],
-                      subject: 'Riwayat Latihan'));
+                  try {
+                    final dir = await getTemporaryDirectory();
+                    final f = File(
+                        '${dir.path}/cyclingcoach_riwayat.csv');
+                    await f.writeAsString(buildActivitiesCsv(acts));
+                    await SharePlus.instance.share(ShareParams(
+                        files: [XFile(f.path)],
+                        subject: 'Riwayat Latihan'));
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Gagal bagikan: $e')));
+                    }
+                  }
                 }),
             IconButton(
                 icon: const Icon(Icons.flag),
@@ -119,19 +155,83 @@ class _DashState extends ConsumerState<DashboardScreen> {
           ],
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-          heroTag: 'dashboard_fab',
-          tooltip: 'Tambah latihan',
-          onPressed: () => _openForm(null),
-          icon: const Icon(Icons.add),
-          label: const Text('Latihan')),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          // Menu tambah ala speed-dial: 1 tombol utama, 3 aksi
+          // (GPS/Manual/CSV) muncul di atasnya. Lebih ramping di HP kecil
+          // dan sekalian menaikkan discoverability Impor CSV.
+          if (_fabOpen) ...[
+            _FabMini(
+              heroTag: 'dashboard_gps',
+              icon: Icons.fiber_manual_record,
+              label: 'Rekam GPS',
+              onTap: () {
+                setState(() => _fabOpen = false);
+                _goTrack();
+              },
+            ),
+            const SizedBox(height: 10),
+            _FabMini(
+              heroTag: 'dashboard_manual',
+              icon: Icons.add,
+              label: 'Manual',
+              onTap: () {
+                setState(() => _fabOpen = false);
+                _openForm(null);
+              },
+            ),
+            const SizedBox(height: 10),
+            _FabMini(
+              heroTag: 'dashboard_csv',
+              icon: Icons.upload,
+              label: 'Impor CSV',
+              onTap: () {
+                setState(() => _fabOpen = false);
+                _importCsv();
+              },
+            ),
+            const SizedBox(height: 10),
+          ],
+          FloatingActionButton(
+            heroTag: 'dashboard_fab',
+            tooltip: _fabOpen ? 'Tutup' : 'Tambah latihan',
+            onPressed: () =>
+                setState(() => _fabOpen = !_fabOpen),
+            child: AnimatedRotation(
+              turns: _fabOpen ? 0.125 : 0,
+              duration: 200.ms,
+              child: Icon(_fabOpen ? Icons.close : Icons.add),
+            ),
+          ),
+        ],
+      ),
       body: RefreshIndicator(
         onRefresh: () async => ref.invalidate(activitiesProvider),
-        child: ResponsiveList(children: [
-        Text('Halo, ${prefs.userName.isEmpty ? 'Rider' : prefs.userName}!',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.headlineSmall),
+        child: ResponsiveList(
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: [
+        Row(children: [
+          Expanded(
+            child: Text(
+                'Halo, ${prefs.userName.isEmpty ? 'Rider' : prefs.userName}!',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.headlineSmall),
+          ),
+          if (streak > 0) ...[
+            const SizedBox(width: 8),
+            Chip(
+              avatar: const Icon(Icons.local_fire_department,
+                  size: 16, color: Colors.deepOrange),
+              label: Text('$streak mgg',
+                  style: const TextStyle(fontWeight: FontWeight.w800)),
+              visualDensity: VisualDensity.compact,
+            ),
+          ],
+        ]).animate().fadeIn(duration: 250.ms).slideY(
+            begin: 0.15, end: 0, curve: Curves.easeOutCubic),
         const SizedBox(height: AppSpacing.md),
         MetricHero(
           weekKm: weekKm,
@@ -180,23 +280,33 @@ class _DashState extends ConsumerState<DashboardScreen> {
             ),
           ]),
         ),
-        Wrap(
-          spacing: AppSpacing.sm,
-          crossAxisAlignment: WrapCrossAlignment.center,
+        // FIX(abu-abu di HP): JANGAN pakai Flexible di dalam Wrap
+        // (ParentDataWidget ilegal → layout gagal → area abu-abu kosong di
+        // release mode HP). Pakai Row + Expanded yang legal di Flex.
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             TextButton.icon(
               icon: const Icon(Icons.download, size: 16),
               label: const Text('Contoh CSV'),
               onPressed: () async {
-                final f = File(
-                    '${Directory.systemTemp.path}/contoh_cyclingcoach.csv');
-                await f.writeAsString(_sampleCsv);
-                await SharePlus.instance.share(ShareParams(
-                    files: [XFile(f.path)],
-                    subject: 'Contoh CSV CyclingCoach'));
+                try {
+                  final dir = await getTemporaryDirectory();
+                  final f = File(
+                      '${dir.path}/contoh_cyclingcoach.csv');
+                  await f.writeAsString(_sampleCsv);
+                  await SharePlus.instance.share(ShareParams(
+                      files: [XFile(f.path)],
+                      subject: 'Contoh CSV CyclingCoach'));
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Gagal bagikan: $e')));
+                  }
+                }
               },
             ),
-            Flexible(
+            Expanded(
               child: Text(
                   'Format: nama,tanggal,jarak,elevasi,kecepatan,HR,catatan',
                   maxLines: 2,
@@ -209,9 +319,10 @@ class _DashState extends ConsumerState<DashboardScreen> {
           EmptyState(
             icon: Icons.directions_bike,
             title: 'Belum ada latihan.',
-            subtitle: 'Tambah manual via tombol +, atau impor CSV.',
-            actionLabel: 'Tambah latihan pertama',
-            onAction: () => _openForm(null),
+            subtitle:
+                'Rekam GPS dengan peta, tambah manual, atau impor CSV.',
+            actionLabel: 'Rekam GPS pertama',
+            onAction: () => _goTrack(),
           ),
         ...filtered.asMap().entries.map((entry) {
           final a = entry.value;
@@ -239,6 +350,7 @@ class _DashState extends ConsumerState<DashboardScreen> {
               subtitle: Text(
                   '${formatDateShort(a.startDate)} • ${(a.distance / 1000).toStringAsFixed(1)} km • ${msToKmh(a.averageSpeed).toStringAsFixed(1)} km/h'
                   '${a.averageHeartRate > 0 ? ' • ${a.averageHeartRate.toInt()} bpm $zone' : ''} • ${kcal.toStringAsFixed(0)} kkal'
+                  '${a.hasRoute ? ' • 🗺 GPS' : ''}'
                   '${a.note.isNotEmpty ? ' • ada catatan' : ''}',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis),
@@ -310,6 +422,12 @@ class _DashState extends ConsumerState<DashboardScreen> {
   void _toggle(int id) => setState(
       () => selected.contains(id) ? selected.remove(id) : selected.add(id));
 
+  /// Buka layar Rekam GPS (peta OSM live + auto-pause + simpan ke DB).
+  void _goTrack() {
+    Navigator.push(
+        context, MaterialPageRoute(builder: (_) => const TrackScreen()));
+  }
+
   void _pushEvaluation(CyclingActivity saved) {
     Navigator.push(
         context,
@@ -323,8 +441,21 @@ class _DashState extends ConsumerState<DashboardScreen> {
   }
 
   Future<void> _importCsv() async {
-    final files = await FilePicker.pickFiles();
-    if (files.isEmpty) return;
+    // v13: pickFiles() -> List<PlatformFile> (kosong bila Batal, tak null).
+    List<PlatformFile> files;
+    try {
+      files = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['csv', 'txt'],
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Gagal buka file: $e')));
+      }
+      return;
+    }
+    if (files.isEmpty) return; // user Batal: diam
     final f = files.first;
     String text;
     try {

@@ -268,6 +268,9 @@ Future<CyclingActivity?> showActivityForm(
                 averageHeartRate:
                     double.tryParse(hrC.text.replaceAll(',', '.')) ?? 0,
                 note: noteC.text.trim(),
+                // Jangan hapus rute GPS saat edit manual (weirdness fix).
+                routeJson: initial?.routeJson ?? '',
+                durationSec: initial?.durationSec ?? 0,
               );
               final db = ref.read(dbProvider);
               final newId = await db.upsertActivity(a);
