@@ -72,7 +72,7 @@ auto-pause, rute tersimpan per sesi, ekspor GPX, analisis beban sport-science
 | Belum ada Flutter | Flutter 3.47+ terpasang | Ikuti [flutter.dev/install](https://flutter.dev/install), lalu `flutter doctor` |
 | Repo baru di-clone | Depedensi siap | `flutter pub get` |
 | Tabel DB berubah | Kode Drift regenerasi | `dart run build_runner build` |
-| Kode siap dites | Yakin tak ada error | `flutter analyze` (harus No issues) + `flutter test` (40 hijau) |
+| Kode siap dites | Yakin tak ada error | `flutter analyze` (harus No issues) + `flutter test` (44 hijau) |
 | Mau coba di HP | App jalan di Android | Colok HP (USB debugging ON) → `flutter run` → pilih device |
 | Tak ada HP | Coba di laptop | `flutter run` → pilih **Chrome** (peta + DB jalan; GPS = lokasi kasar browser) atau **Windows** (butuh Developer Mode ON untuk symlink plugin) |
 | Buka app pertama kali | Onboarding selesai | Isi nama + umur → MaxHR otomatis `220−umur` → masuk Beranda |
@@ -96,6 +96,27 @@ Beranda → **Rekam GPS** (atau tab **Rekam**): tekan **Mulai Rekam** → gowes 
   (HR & catatan boleh kosong; file contoh via **Contoh CSV**). CSV = ringkasan
   tanpa rute — rute hanya dari rekaman GPS / restore JSON.
 - **Contoh baris**: `,Gowes Pagi,2026-09-01,25.50,150,25.0,140,"Rute biasa"`
+
+### C2. Cari rute & navigasi (tab Jelajah — pengganti GMaps, tanpa API key)
+
+Tab **Jelajah** = GMaps mini khusus sepeda, semua gratis tanpa key
+(peta OSM + cari Nominatim + rute OSRM profil bicycle):
+
+1. Kolom **Dari** otomatis = **Posisi saya** (tombol 📍 untuk isi ulang);
+   kolom **Ke** = ketik nama tempat / jalan / kota, atau **tap peta**
+   (chip di atas peta nunjukin tap mengisi Dari atau Tujuan — ketuk ikon
+   pin di tiap kolom untuk ganti target; tap jalan langsung jadi nama
+   jalan via reverse-geocode).
+2. Tombol **⇅** menukar Dari–Tujuan; **🧹** membersihkan.
+3. Rute sepeda **ramah gowes** (profil bicycle: hindari tol/motorway)
+   otomatis digambar + jarak & estimasi waktu. Server primer OSRM,
+   fallback FOSSGIS bila primer down.
+4. **Mulai** = navigasi DI DALAM app (peta mengikuti posisimu, banner sisa
+   jarak + ETA live, berhenti otomatis saat sampai <40 m). Tak perlu GMaps.
+5. **Rekam** = buka layar Rekam GPS (catat gowes sambil ikuti rute).
+6. **GPX** = bagikan rute rencana (impor ke Strava/Garmin/head unit).
+7. **GMaps** = buka rute di Google Maps (opsi eksternal bila butuh
+   turn-by-turn suara).
 
 ### D. Backup / restore — kapan pakai apa
 
@@ -121,6 +142,8 @@ berjalan sendiri.
 | Layar putih di Chrome + error `web parameter needs to be set` | `web/sqlite3.wasm` / `drift_worker.js` hilang | File wajib ada (dari release drift = `pubspec.lock`); jangan hapus folder `web/` |
 | `Type 'X' not found` setelah `pub get` | Cache compiler basi | `flutter clean` → `flutter pub get` → run lagi |
 | Peta abu-abu / tile tak muncul | Offline / tile OSM diblokir | Nyalakan internet; OSM butuh koneksi saat lihat peta (rute GPS tetap terekam offline) |
+| Tile putih tulisan "API KEY REQUIRED" diagonal | Server CARTO kini wajib API key berbayar | Sudah diperbaiki: app kini pakai tile OSM murni tanpa key (primer `tile.openstreetmap.org` + fallback HOT). Update ke versi ini |
+| Rute sepeda tak ditemukan di Jelajah | Server OSRM primer down / jalan tak tersambung | App otomatis coba server fallback FOSSGIS (`routing.openstreetmap.de/routed-bike`); bila dua-duanya gagal coba titik lain yang di jalan raya |
 | GPS tak dapat fix / akurasi besar | Di dalam gedung / GPS HP mati | Keluar ruangan, nyalakan Location, tunggu chip `±… m` < 15 |
 | `Izin lokasi ditolak` | Permission denied / forever | Settings → Apps → CyclingCoach → Location → Allow + notifikasi ON |
 | Rekaman berhenti saat layar mati (Xiaomi/Oppo/Vivo) | OS membunuh service walau foreground | Layar Rekam → **Buka Pengaturan** → Battery *No restrictions*; kunci app di Recent 🔒; izin Location = *Allow all the time* |
@@ -138,7 +161,7 @@ berjalan sendiri.
 | Lapisan | Teknologi | Peran |
 |---|---|---|
 | UI | Flutter 3 + Material 3, Riverpod | 7 tab (`home_shell.dart` + `IndexedStack` lazy agar Beranda instant di HP kentang) |
-| Peta | `flutter_map` 8.3.2 + `latlong2` (primer CARTO Light + fallback OSM) | Render OSM — setara Leaflet.js (`TileLayer`/`PolylineLayer`/`MarkerLayer`). Atribusi OSM wajib tampil |
+| Peta | `flutter_map` 8.3.2 + `latlong2` (murni OSM tanpa key: primer `tile.openstreetmap.org` + fallback HOT `tile.openstreetmap.fr/hot`; gelap via `darkModeTileBuilder` bawaan) | Render OSM — template persis Leaflet.js `L.tileLayer` (`TileLayer`/`PolylineLayer`/`MarkerLayer`). Atribusi `© OpenStreetMap contributors` wajib tampil |
 | GPS | `geolocator` ^13 (`bestForNavigation`, `distanceFilter: 5 m`) + `flutter_background_service` ^5.1.0 (foreground `location`) + `permission_handler` | Stream di **isolate service** (tetap jalan layar mati) + izin WhileUsing/Always + notifikasi + `ignoreBatteryOptimizations` + backup disk anti-hilang |
 | DB lokal | **Drift (SQLite)** via `drift_flutter`, migrasi **v6** | Tabel `cycling_activities` (+`route_json`, `duration_sec`), `event_goals`, `plan_checks`. Offline-first, reactive `watch()` |
 | Prefs | `SharedPreferences` | target mingguan, MaxHR, profil, berat, tema, onboarded + **`track_backup_v1`** (sesi berjalan) |
@@ -191,7 +214,7 @@ core/geo_utils.dart          → Matematika GPS murni: haversine, filterRawPoint
                                (Douglas-Peucker), encode/decodeRoute (JSON ringkas),
                                buildGpx (GPX 1.1), movingAvgKmh, **movingTimeSec
                                (waktu gerak), fastestSplit (KM tercepat),
-                               eleMinMax (min–maks)**. Semua dites (40 tes).
+                               eleMinMax (min–maks)**. Semua dites (44 tes).
 core/track_service.dart        → Foreground service (isolate latar): _BgEngine
                                (elapsed wall-clock, jeda manual hentikan jarak,
                                notifikasi `● Merekam`, **backup disk
@@ -226,6 +249,16 @@ ui/screens/dashboard_screen → Target, search/sort/hapus massal, CSV, kartu riw
                                FIX: Contoh-CSV kini Row+Expanded (bukan Wrap+Flexible
                                ilegal penyebab abu-abu di HP), share via
                                getTemporaryDirectory, picker v13 List<PlatformFile>.
+ui/screens/explore_screen.dart → Jelajah ala GMaps TANPA key: kolom Dari+Ke
+                               (cari Nominatim, Posisi saya, tukar, tap-peta
+                               + reverse-geocode), rute sepeda OSRM bicycle
+                               + fallback FOSSGIS, **navigasi in-app**
+                               (follow + sisa jarak/ETA + auto-sampai),
+                               GPX rencana (shareGpx), Rekam rute ini,
+                               GMaps eksternal. Tile OSM key-free.
+core/places_api.dart           → searchPlaces (Nominatim, UA wajib), fetchBikeRoute
+                               (OSRM primer + fallback FOSSGIS, profil bicycle),
+                               reverseGeocode (label jalan, fallback koordinat).
 ui/screens/track_screen.dart → Layar Rekam: LiveTrackMap, chip status+akurasi,
                                banner error dengan **Simpan Hasil** + tombol
                                **Pulihkan rekaman terputus** + **Buka Pengaturan**
@@ -245,8 +278,11 @@ ui/screens/eta_predictor_screen.dart → Kalkulator COT standalone + timer live.
 ui/screens/profile_screen.dart → Profil, MaxHR, tema, backup/restore, hapus data.
                                FIX: picker v13 + temp dir (seperti dashboard).
 ui/screens/onboarding_screen.dart → Nama+umur → MaxHR otomatis (220-umur).
-ui/widgets/route_map.dart    → RouteMap (riwayat, auto-bounds + pin start/finish
-                               + atribusi OSM) & LiveTrackMap (ikuti posisi).
+ui/widgets/route_map.dart    → osmTiles() SATU-SATUNYA sumber tile: primer
+                               `tile.openstreetmap.org` + fallback HOT
+                               (TANPA key — CARTO dibuang karena kini minta
+                               API key), gelap via darkModeTileBuilder bawaan;
+                               RouteMap + LiveTrackMap + zoom + MapOfflineHint.
 ui/widgets/elev_chart.dart   → NEW. ElevProfileChart ala Strava (area + min/max
                                + tooltip km/m; placeholder bila tanpa altitude).
 ui/widgets/activity_form.dart → Dialog tambah/edit (jarak/durasi/kecepatan saling
@@ -276,6 +312,10 @@ ui/widgets/responsive.dart   → Breakpoints + ResponsiveList/TwoColumn.
       `path_provider.getTemporaryDirectory()` di dashboard/profile/track(GPX);
       picker **v13** (`pickFiles()->List<PlatformFile>`, kosong = Batal, bukan
       null) + filter ekstensi + try/catch + snackbar.
+- [x] **Tile "API KEY REQUIRED" (CARTO kini berbayar)** → buang CARTO;
+      primer `tile.openstreetmap.org` + fallback HOT (murni tanpa key, template
+      persis Leaflet.js); gelap via `darkModeTileBuilder` bawaan flutter_map;
+      atribusi `© OpenStreetMap contributors`.
 - [x] **Metrik tak lengkap ("di mana tercepat?")** → tambah `movingTimeSec`,
       `fastestSplit`, `eleMinMax` (dites); Detail kini: Waktu gerak, Avg gerak,
       banner ⚡ Terkencang KM X + highlight split, Elev turun + min–maks;
@@ -301,7 +341,7 @@ ui/widgets/responsive.dart   → Breakpoints + ResponsiveList/TwoColumn.
 flutter pub get
 dart run build_runner build   # regenerasi Drift bila tabel berubah
 flutter analyze                # harus: No issues found!
-flutter test                   # 40 tes (21 lama + 14 GPS + 5 places/premium) harus hijau
+flutter test                   # 44 tes (21 lama + 14 GPS + 9 places/premium) harus hijau
 flutter run                    # GPS: pakai HP fisik (USB debugging ON) — emulator: mock route
 ```
 
