@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:cycling_coach/src/models/models.dart';
 import 'package:cycling_coach/src/core/geo_utils.dart';
 
@@ -130,8 +131,7 @@ void main() {
     expect(splits.map((s) => s.index).toList(), [1, 2, 3]);
   });
 
-  test('CyclingActivity GPS: durationMin pakai durationSec', () {
-    const a = CyclingActivity(
+  test('CyclingActivity GPS: durationMin pakai durationSec', () {    const a = CyclingActivity(
       name: 'GPS',
       distance: 10000,
       totalElevationGain: 50,
@@ -181,5 +181,99 @@ void main() {
     final mm = eleMinMax(pts);
     expect(mm.max, greaterThan(mm.min));
     expect(eleMinMax(const []).min, 0);
+  });
+
+  group('TrackFilter (akurasi live ala Strava)', () {
+    test('titik pertama butuh akurasi <= 15 m', () {
+      final f = TrackFilter();
+      expect(
+          f.add(lat: -6.2, lng: 106.8, ele: 0, t: 0, acc: 30, speedMs: 5),
+          isNull);
+      expect(f.hasFix, isFalse);
+      final p = f.add(lat: -6.2, lng: 106.8, ele: 0, t: 0, acc: 8, speedMs: 5);
+      expect(p, isNotNull);
+      expect(f.hasFix, isTrue);
+    });
+
+    test('diam (Doppler < 0,5 m/s) dibekukan, jarak tak merambat', () {
+      final f = TrackFilter();
+      f.add(lat: -6.2, lng: 106.8, ele: 0, t: 0, acc: 5, speedMs: 6);
+      // 10 fix diam 8 m bergeser (noise) selama 30 dtk → semua dibuang.
+      for (var i = 1; i <= 10; i++) {
+        final p = f.add(
+            lat: -6.2 + i * 0.00001,
+            lng: 106.8,
+            ele: 0,
+            t: i * 3000,
+            acc: 5,
+            speedMs: 0.0);
+        expect(p, isNull, reason: 'fix diam ke-$i harus dibekukan');
+      }
+    });
+
+    test('bergerak normal lolos tiap >= 1 dtk', () {
+      final f = TrackFilter();
+      f.add(lat: -6.2, lng: 106.8, ele: 0, t: 0, acc: 5, speedMs: 6);
+      // ~6 m/dtk ke timur.
+      final p = f.add(
+          lat: -6.2, lng: 106.8 + 6 / 110567.0, ele: 0, t: 1000, acc: 5, speedMs: 6);
+      expect(p, isNotNull);
+      // Burst < 1 dtk dibuang.
+      expect(
+          f.add(
+              lat: -6.2,
+              lng: 106.8 + 7 / 110567.0,
+              ele: 0,
+              t: 1500,
+              acc: 5,
+              speedMs: 6),
+          isNull);
+    });
+
+    test('GPS jump > 80 km/h dibuang', () {
+      final f = TrackFilter();
+      f.add(lat: -6.2, lng: 106.8, ele: 0, t: 0, acc: 5, speedMs: 8);
+      expect(
+          f.add(lat: 0, lng: 0.001, ele: 0, t: 1000, acc: 5, speedMs: 8),
+          isNull);
+    });
+
+    test('akurasi jalan > 25 m dibuang', () {
+      final f = TrackFilter();
+      f.add(lat: -6.2, lng: 106.8, ele: 0, t: 0, acc: 5, speedMs: 6);
+      expect(
+          f.add(
+              lat: -6.2,
+              lng: 106.8001,
+              ele: 0,
+              t: 5000,
+              acc: 40,
+              speedMs: 6),
+          isNull);
+    });
+
+    test('elevasi di-smoothing (noise +-8 m tak menggelembungkan gain)', () {
+      final f = TrackFilter();
+      const baseLat = -6.2, baseLng = 106.8;
+      for (var i = 0; i < 6; i++) {
+        // Dataran: altitude mentah berosilasi 100/108.
+        f.add(
+            lat: baseLat,
+            lng: baseLng + i * 10 / 110567.0,
+            ele: i.isEven ? 100.0 : 108.0,
+            t: i * 2000,
+            acc: 5,
+            speedMs: 6);
+      }
+      expect(f.last, isNotNull);
+      // Rata-rata window terakhir ≈ 104, bukan 108.
+      expect(f.last!.ele, closeTo(104, 3.0));
+    });
+
+    test('cyclingLocationSettings valid di semua platform', () {
+      final s = cyclingLocationSettings();
+      expect(s.accuracy, LocationAccuracy.bestForNavigation);
+      expect(s.distanceFilter, 3);
+    });
   });
 }

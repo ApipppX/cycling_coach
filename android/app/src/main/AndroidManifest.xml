@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!-- INTERNET wajib agar TileLayer OSM/Carto bisa dimuat di HP.
          Tanpa ini peta blank + log "flutter_map: Failed to load tile". -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -17,6 +18,8 @@
          sebagian HP (Xiaomi/Oppo/Vivo) mematikan GPS ~5 menit setelah
          layar mati walau foreground service jalan. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Dibutuhkan karena TrackRecorder meminta Permission.ignoreBatteryOptimizations.
+         Tanpa ini request diabaikan di sebagian HP. -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
@@ -51,6 +54,18 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- WAJIB di Android 14+ (API 34): service latar didaftarkan dengan
+             foregroundServiceType="location". Tanpa ini startForeground(type=location)
+             melempar MissingForegroundServiceTypeException → force close tepat
+             saat user menekan "Mulai Rekam". Plugin hanya mendeklarasikan service
+             tanpa tipe, jadi kita timpa via manifest-merger. -->
+        <service
+            android:name="id.flutter.flutter_background_service.BackgroundService"
+            android:enabled="true"
+            android:exported="true"
+            android:stopWithTask="false"
+            android:foregroundServiceType="location"
+            tools:replace="android:foregroundServiceType" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

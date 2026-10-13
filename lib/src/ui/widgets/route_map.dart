@@ -4,33 +4,40 @@ import 'package:latlong2/latlong.dart';
 import '../../models/models.dart';
 import '../../core/geo_utils.dart';
 
-/// Tile murni OpenStreetMap TANPA API key (ala Leaflet.js default):
-/// primer `tile.openstreetmap.org`, fallback `tile.openstreetmap.fr/hot`.
-/// flutter_map = "Leaflet untuk Flutter" — template URL yang sama persis
-/// dengan `L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png')`
-/// di Leaflet web.
+/// Tile primer Esri WorldStreetMap + fallback HOT (stack yang sama dipakai
+/// Leaflet.js di web). flutter_map = "Leaflet untuk Flutter" — template URL
+/// yang sama persis dengan `L.tileLayer(...)` di Leaflet web.
 ///
-/// Kenapa BUKAN CARTO lagi?
-/// - `*.basemaps.cartocdn.com` kini mengembalikan tile
-///   "API KEY REQUIRED" (butuh apikey CARTO berbayar) — peta jadi putih
-///   dengan watermark diagonal, persis seperti laporan user.
+/// Kenapa Esri duluan (bukan CARTO/OSM langsung)?
+/// - `*.basemaps.cartocdn.com` kini mengembalikan tile "API KEY REQUIRED"
+///   (butuh apikey CARTO berbayar) + tidak terjangkau dari jaringan Indonesia
+///   (koneksi timeout → peta abu-abu). Diukur Okt 2026: CARTO = gagal total,
+///   OSM resmi = ~25 dtk/tile, Esri (Akamai CDN) = ~0,6 dtk/tile.
 /// - OSM standar + HOT 100% gratis tanpa key, hanya butuh User-Agent
 ///   yang benar (dikirim via [userAgentPackageName]).
+/// - v8 sudah membatalkan request tile basi secara native (pengganti
+///   plugin cancellable yang discontinued) → peta web lebih cepat.
 ///
-/// Mode gelap TANPA key: pakai filter bawaan flutter_map
-/// ([darkModeTileBuilder], inversi + rotasi hue 180°) di atas tile OSM
-/// yang sama — marker/polyline tidak ikut digelapkan (layer terpisah).
+/// Mode gelap: Esri Canvas Dark Gray untuk gowes malam (keuntungan PRO).
 ///
 /// PENTING (bug peta blank di HP):
 /// - Android WAJIB punya `INTERNET` permission di AndroidManifest.
 ///   Tanpa itu tile gagal dimuat → abu-abu + log "flutter_map" berulang.
-/// - OSM kadang rate-limit (403/429). [fallbackUrl] memastikan
+/// - OSM/Esri kadang rate-limit (403/429). [fallbackUrl] memastikan
 ///   peta tetap tampil bila server primer menolak.
 /// - Error tile dicatat ke [mapTileErrorCount] (terminal tetap senyap);
 ///   badge offline hanya muncul bila tile gagal beneran.
-const _osmUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+/// - Urutan path Esri = {z}/{y}/{x} (Y dulu), BUKAN {z}/{x}/{y} seperti OSM.
+///   Salah urutan → tile acak/wilayah salah tapi tetap "terlihat normal".
+const _esriLightUrl =
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}';
+const _esriDarkUrl =
+    'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}';
 const _hotUrl = 'https://tile.openstreetmap.fr/hot/{z}/{x}/{y}.png';
-const _osmAttribution = '© OpenStreetMap contributors';
+// Rantai fallback: Esri -> HOT (data OSM). OSM standar
+// (https://tile.openstreetmap.org/{z}/{x}/{y}.png) setara dengan HOT
+// bila HOT ikut di-rate-limit — ganti [fallbackUrl] di atas bila perlu.
+const _osmAttribution = '© OpenStreetMap contributors · Powered by Esri';
 const _appPackage = 'com.apipppx.cyclingcoach';
 
 /// Penghitung error tile global per sesi jalan-nya app.
@@ -53,7 +60,7 @@ void resetMapTileErrors() => mapTileErrorCount.value = 0;
 /// (tanpa server/API key tambahan) — enak untuk gowes malam (keuntungan PRO).
 TileLayer osmTiles({bool dark = false}) {
   return TileLayer(
-    urlTemplate: _osmUrl,
+    urlTemplate: dark ? _esriDarkUrl : _esriLightUrl,
     fallbackUrl: _hotUrl,
     maxZoom: 19,
     userAgentPackageName: _appPackage,
