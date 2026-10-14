@@ -190,6 +190,8 @@ class _BgEngine {
   double _lastSpeedMs = 0;
   int _notifCount = 0;
   int _lastPersistMs = 0;
+  // Gate kualitas GPS — instance SAMA aturannya dengan jalur legacy.
+  final TrackFilter _filter = TrackFilter();
 
   _BgEngine(this._service);
 
@@ -217,6 +219,7 @@ class _BgEngine {
     _curLng = null;
     _notifCount = 0;
     _lastPersistMs = 0;
+    _filter.reset();
     // Sesi baru = backup lama tak berlaku lagi.
     unawaited(clearTrackBackup());
     // Fix cepat agar peta UI langsung punya titik tengah.
@@ -229,10 +232,8 @@ class _BgEngine {
       }
     }).catchError((_) {});
     _sub?.cancel();
-    const settings = LocationSettings(
-      accuracy: LocationAccuracy.bestForNavigation,
-      distanceFilter: 5,
-    );
+    // Sampling 1 Hz ala Strava (lihat cyclingLocationSettings).
+    final settings = cyclingLocationSettings();
     _sub = Geolocator.getPositionStream(locationSettings: settings).listen(
       _onFix,
       onError: (_) {
@@ -261,35 +262,19 @@ class _BgEngine {
       return;
     }
 
-    if (pos.accuracy > 0 && pos.accuracy > 25) {
-      _push(snapshot());
-      return;
-    }
     final now = DateTime.now().millisecondsSinceEpoch;
-    final seed = rawFixToFilteredSeed(
-        pos.latitude, pos.longitude, pos.altitude, now, pos.accuracy);
-    if (seed == null) {
-      _push(snapshot());
-      return;
-    }
+    final seed = _filter.add(
+      lat: pos.latitude,
+      lng: pos.longitude,
+      ele: pos.altitude,
+      t: now,
+      acc: pos.accuracy,
+      speedMs: pos.speed,
+    );
     var appended = false;
-    if (_pts.isEmpty) {
+    if (seed != null) {
       _pts.add(seed);
       appended = true;
-    } else {
-      final prev = _pts.last;
-      final dt = (seed.t - prev.t) / 1000.0;
-      if (dt > 0) {
-        final d = haversineM(prev.lat, prev.lng, seed.lat, seed.lng);
-        if (d / dt <= 22.2) {
-          // GPS jump.
-          if (!(d < 2.0 && dt < 3)) {
-            // Diam di lampu merah: hemat poin.
-            _pts.add(seed);
-            appended = true;
-          }
-        }
-      }
     }
     if (appended) _seq++;
 

@@ -4,16 +4,38 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/models.dart';
 import '../../core/eta_predictor.dart';
+import '../../core/track_recorder.dart';
+import 'track_screen.dart';
 import '../widgets/common.dart';
 import '../widgets/responsive.dart';
 import '../theme/app_theme.dart';
 
-/// Kalkulator ETA Anti-COT — MODE MANUAL.
+/// Mode input posisi: otomatis dari GPS atau manual/simulasi.
+enum EtaMode { auto, manual }
+
+/// Preset event ala aplikasi Audax/brevet (referensi: Audax timer apps,
+/// Ride with GPS, Garmin Edge): sekali ketuk → target + COT + checkpoint
+/// terisi sekaligus. COT mengikuti standar brevet umum.
+const _etaPresets = [
+  (label: 'Fun 50K', km: 50.0, cotH: 4.0, step: 10.0),
+  (label: 'Audax 100K', km: 100.0, cotH: 8.0, step: 10.0),
+  (label: 'Audax 200K', km: 200.0, cotH: 13.5, step: 20.0),
+  (label: 'Audax 300K', km: 300.0, cotH: 20.0, step: 25.0),
+  (label: 'Audax 400K', km: 400.0, cotH: 27.0, step: 25.0),
+  (label: 'Audax 600K', km: 600.0, cotH: 40.0, step: 50.0),
+];
+
+/// Kalkulator ETA Anti-COT — MODE OTOMATIS (default).
 ///
-/// Sengaja TIDAK otomatis: mengetik tidak pernah mengubah field lain dan
-/// tidak memicu hitung ulang (menghindari hasil kedip-kedip dari ketikan
-/// setengah jadi). Isi data → tekan HITUNG → hasil dikunci sampai HITUNG
-/// ditekan lagi.
+/// Referensi UX: Strava Live Segments (pace real-time tanpa ketik),
+/// Garmin Edge (ETA + "butuh pace X" update live), aplikasi timer Audax
+/// (preset jarak + COT sekali ketuk, jam start = flag-off).
+///
+/// - Mode OTOMATIS: KM + speed + waktu tempuh diambil dari GPS yang sedang
+///   merekam ([trackRecorderProvider]); hasil dihitung ulang sendiri
+///   (debounce) tanpa tekan tombol. Tombol HITUNG jadi refresh manual.
+/// - Mode MANUAL: seperti dulu — untuk simulasi sebelum gowes.
+/// Mengetik manual tidak pernah mengutak-atik field lain.
 class EtaPredictorScreen extends ConsumerStatefulWidget {
   final EventGoal? event;
   const EtaPredictorScreen({super.key, this.event});
@@ -33,6 +55,15 @@ class _EtaState extends ConsumerState<EtaPredictorScreen> {
   Timer? _live;
   bool get liveOn => _live != null;
   final _scroll = ScrollController();
+
+  /// Mode otomatis (GPS) vs manual. Default otomatis agar "serba auto".
+  EtaMode _mode = EtaMode.auto;
+  /// Debounce hitung-ulang otomatis (hindari kedip saat ketik/GPS update).
+  Timer? _autoDeb;
+  /// Detak jam untuk refresh elapsed live (5 dtk) saat mode auto.
+  Timer? _clock;
+  /// Tanda tangan data GPS terakhir — cegah loop hitung ulang.
+  String _lastAutoSig = '';
 
   EtaPrediction? _result;
   DateTime? _resultStart;
@@ -60,19 +91,121 @@ class _EtaState extends ConsumerState<EtaPredictorScreen> {
     elapsedC = TextEditingController();
     speedC = TextEditingController();
     stepC = TextEditingController(text: '10');
-    // Refresh indikator "x dari 3" saat mengetik, tanpa menghitung ulang.
-    kmC.addListener(_refresh);
-    speedC.addListener(_refresh);
-    elapsedC.addListener(_refresh);
+    // Refresh indikator "x dari 3" saat mengetik +picu hitung-otomatis.
+    // Debounce di dalam _scheduleAuto sehingga ketikan setengah jadi
+    // tidak bikin hasil kedip-kedip.
+    kmC.addListener(_onManualChanged);
+    speedC.addListener(_onManualChanged);
+    elapsedC.addListener(_onManualChanged);
+    targetC.addListener(_scheduleAuto);
+    cotC.addListener(_scheduleAuto);
+    stepC.addListener(_scheduleAuto);
+    _clock = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!mounted || _mode != EtaMode.auto) return;
+      final t = ref.read(trackRecorderProvider);
+      if (t.status == TrackStatus.recording ||
+          t.status == TrackStatus.paused) {
+        _hitung(auto: true);
+      }
+    });
   }
 
   void _refresh() {
     if (mounted) setState(() {});
   }
 
+  void _onManualChanged() {
+    _refresh();
+    _scheduleAuto();
+  }
+
+  /// Minta hitung-ulang otomatis 600 ms setelah perubahan terakhir.
+  /// Berlaku di kedua mode (ketikan manual ikut terhitung sendiri);
+  /// GPS punya pemicu sendiri via [_maybeAuto] + [_clock].
+  void _scheduleAuto() {
+    if (!mounted) return;
+    _autoDeb?.cancel();
+    _autoDeb = Timer(const Duration(milliseconds: 600), () {
+      if (mounted) _hitung(auto: true);
+    });
+  }
+
+  /// Dipanggil tiap GPS update: hitung ulang bila data berubah.
+  void _maybeAuto(TrackState t) {
+    if (_mode != EtaMode.auto) return;
+    final sig =
+        '${t.distanceM.toStringAsFixed(1)}|${t.elapsedSec}|${t.avgSpeedMs.toStringAsFixed(2)}|${t.status.name}';
+    if (sig == _lastAutoSig) return;
+    _lastAutoSig = sig;
+    _scheduleAuto();
+  }
+
+  /// Nilai efektif: GPS bila mode auto + ada rekaman, else field manual.
+  /// Mengembalikan null bila data kurang dari 2 dari 3.
+  ({double km, double speedKmh, double elapsedMin, bool fromGps})?
+      _effectiveTriple(TrackState t) {
+    if (_mode == EtaMode.auto) {
+      final gps = t.status == TrackStatus.recording ||
+          t.status == TrackStatus.paused ||
+          t.status == TrackStatus.finished;
+      if (gps && (t.distanceM > 0 || t.elapsedSec > 0)) {
+        final km = t.distanceKm;
+        final elapsedMin = t.elapsedSec / 60.0;
+        final speed = t.elapsedSec > 0
+            ? t.distanceM / t.elapsedSec * 3.6
+            : t.currentKmh;
+        final r = resolveTriple(km: km, speedKmh: speed, elapsedMin: elapsedMin);
+        if (r != null) {
+          return (
+            km: r.km,
+            speedKmh: r.speedKmh,
+            elapsedMin: r.elapsedMin,
+            fromGps: true
+          );
+        }
+      }
+      // Auto tapi GPS belum jalan → pakai elapsed dari jam start bila ada,
+      // digabung field manual yang terisi (simulasi pra-start).
+    }
+    final r = resolveTriple(
+        km: _num(kmC), speedKmh: _num(speedC), elapsedMin: _num(elapsedC));
+    if (r == null) return null;
+    return (
+      km: r.km,
+      speedKmh: r.speedKmh,
+      elapsedMin: r.elapsedMin,
+      fromGps: false
+    );
+  }
+
+  void _applyPreset(double km, double cotH, double step) {
+    targetC.text = km.toStringAsFixed(0);
+    cotC.text = cotH.toStringAsFixed(1).replaceAll(RegExp(r'\.0$'), '');
+    stepC.text = step.toStringAsFixed(0);
+    _scheduleAuto();
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+          content: Text(
+              'Preset ${km.toStringAsFixed(0)}K • COT ${cotC.text} jam • tiap ${step.toStringAsFixed(0)} km'),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2)),
+    );
+  }
+
+  /// Sinkron jam start dari GPS yang sedang merekam (flag-off otomatis).
+  void _syncStartFromGps(TrackState t) {
+    final s = t.startedAt;
+    if (s == null) return;
+    setState(() => start = TimeOfDay(hour: s.hour, minute: s.minute));
+    _scheduleAuto();
+  }
+
   @override
   void dispose() {
     _live?.cancel();
+    _autoDeb?.cancel();
+    _clock?.cancel();
     _scroll.dispose();
     targetC.dispose();
     cotC.dispose();
@@ -103,47 +236,62 @@ class _EtaState extends ConsumerState<EtaPredictorScreen> {
     _scrollToResult();
   }
 
-  void _hitung() {
+  void _hitung({bool auto = false}) {
     FocusScope.of(context).unfocus();
     final target = _num(targetC);
     final cotH = _num(cotC);
     if (target <= 0 || target > 1000) {
+      if (auto) return; // mode auto: diam saja sampai rencana valid
       _fail('Isi target jarak dulu (1–1000 km).');
       return;
     }
     if (cotH <= 0 || cotH > 72) {
+      if (auto) return;
       _fail('Isi COT total dulu (jam, maks 72).');
       return;
     }
-    final r = resolveTriple(
-        km: _num(kmC),
-        speedKmh: _num(speedC),
-        elapsedMin: _num(elapsedC));
-    if (r == null) {
-      _fail('Isi minimal 2 dari 3: KM posisi, avg speed, waktu tempuh.');
+    final track = ref.read(trackRecorderProvider);
+    final eff = _effectiveTriple(track);
+    if (eff == null) {
+      if (auto) {
+        // Belum cukup data → bersihkan hasil basi, tanpa error merah.
+        if (_result != null && mounted) setState(() => _result = null);
+        return;
+      }
+      _fail('Isi minimal 2 dari 3: KM posisi, avg speed, waktu tempuh — atau mulai Rekam GPS.');
       return;
     }
+    final r = (km: eff.km, speedKmh: eff.speedKmh, elapsedMin: eff.elapsedMin);
     if (r.speedKmh > 60) {
+      if (auto) return;
       _fail('Pace ${r.speedKmh.toStringAsFixed(1)} km/h tidak wajar (maks 60).');
       return;
     }
     if (r.km > target) {
+      if (auto) return;
       _fail(
           'Posisi KM (${r.km.toStringAsFixed(1)}) melebihi target ($target km).');
       return;
     }
-    // Tulis balik nilai turunan SEKALI, hanya saat tombol ditekan.
+    // Tulis balik nilai turunan ke field manual SEKALI (bukan tiap GPS tick
+    // agar tidak beradu dengan ketikan user).
     String? note;
-    if (_num(kmC) <= 0) {
+    if (eff.fromGps) {
+      note =
+          'Otomatis dari GPS • ${r.km.toStringAsFixed(1)} km • ${r.speedKmh.toStringAsFixed(1)} km/h • ${formatDuration(r.elapsedMin)}.';
+    } else if (!auto && _num(kmC) <= 0) {
       kmC.text = r.km.toStringAsFixed(1);
       note = 'Jarak dilengkapi otomatis: ${r.km.toStringAsFixed(1)} km.';
-    } else if (_num(elapsedC) <= 0) {
+    } else if (!auto && _num(elapsedC) <= 0) {
       elapsedC.text = r.elapsedMin.toStringAsFixed(0);
       note =
           'Waktu tempuh dilengkapi otomatis: ${formatDuration(r.elapsedMin)}.';
-    } else if (_num(speedC) <= 0) {
+    } else if (!auto && _num(speedC) <= 0) {
       speedC.text = r.speedKmh.toStringAsFixed(1);
       note = 'Pace dilengkapi otomatis: ${r.speedKmh.toStringAsFixed(1)} km/h.';
+    } else if (eff.fromGps) {
+      note =
+          'Otomatis dari GPS • ${r.km.toStringAsFixed(1)} km • ${r.speedKmh.toStringAsFixed(1)} km/h.';
     }
     final step = _num(stepC);
     final p = predictEta(
@@ -191,6 +339,7 @@ class _EtaState extends ConsumerState<EtaPredictorScreen> {
   void _startNow() {
     setState(() => start = TimeOfDay.now());
     _fillElapsedFromStart();
+    _scheduleAuto();
   }
 
   void _reset() {
@@ -210,6 +359,7 @@ class _EtaState extends ConsumerState<EtaPredictorScreen> {
   void _bump(TextEditingController c, double delta, {int fraction = 0}) {
     final v = (_num(c) + delta).clamp(0, 1e6).toDouble();
     c.text = v.toStringAsFixed(fraction);
+    _scheduleAuto();
   }
 
   void _scrollToResult() {
@@ -223,11 +373,20 @@ class _EtaState extends ConsumerState<EtaPredictorScreen> {
 
   Future<void> _pickStart() async {
     final t = await showTimePicker(context: context, initialTime: start);
-    if (t != null) setState(() => start = t);
+    if (t != null) {
+      setState(() => start = t);
+      _scheduleAuto();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final track = ref.watch(trackRecorderProvider);
+    ref.listen(trackRecorderProvider, (_, next) => _maybeAuto(next));
+    // Sinkron awal: bila GPS sudah merekam saat layar dibuka, langsung hitung.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _maybeAuto(track);
+    });
     final p = _result;
     final scheme = Theme.of(context).colorScheme;
     final color = p == null
@@ -244,6 +403,12 @@ class _EtaState extends ConsumerState<EtaPredictorScreen> {
         ? formatClock(startUsed
             .add(Duration(minutes: p.projectedTotalMin.round())))
         : '-';
+    final gpsLive = track.status == TrackStatus.recording ||
+        track.status == TrackStatus.paused;
+    final gpsReady = gpsLive && (track.distanceM > 0 || track.elapsedSec > 0);
+    final effReady = _mode == EtaMode.auto
+        ? (gpsReady || canHitung)
+        : canHitung;
 
     return Scaffold(
       appBar: AppBar(
@@ -255,19 +420,27 @@ class _EtaState extends ConsumerState<EtaPredictorScreen> {
               onPressed: _showGuide,
             ),
           ]),
-      // Tombol HITUNG sticky di bawah — selalu terlihat tanpa scroll.
+      // Tombol sticky: di mode auto jadi refresh manual (hasil sudah
+      // update sendiri). Selalu aktif bila data cukup.
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(
               AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.md),
           child: FilledButton.icon(
-            icon: const Icon(Icons.calculate_outlined, size: 20),
+            icon: Icon(
+                _mode == EtaMode.auto
+                    ? Icons.autorenew_outlined
+                    : Icons.calculate_outlined,
+                size: 20),
             label: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('HITUNG PREDIKSI',
-                    style:
-                        TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+                Text(
+                    _mode == EtaMode.auto
+                        ? 'HITUNG OTOMATIS AKTIF'
+                        : 'HITUNG PREDIKSI',
+                    style: const TextStyle(
+                        fontSize: 15, fontWeight: FontWeight.w800)),
                 const SizedBox(width: AppSpacing.sm),
                 Container(
                   padding:
@@ -276,7 +449,10 @@ class _EtaState extends ConsumerState<EtaPredictorScreen> {
                     color: Colors.black.withValues(alpha: 0.22),
                     borderRadius: BorderRadius.circular(AppRadius.pill),
                   ),
-                  child: Text('$filledCount/3',
+                  child: Text(
+                      _mode == EtaMode.auto && gpsReady
+                          ? 'GPS'
+                          : '$filledCount/3',
                       style: const TextStyle(
                           fontSize: 12, fontWeight: FontWeight.w800)),
                 ),
@@ -289,14 +465,31 @@ class _EtaState extends ConsumerState<EtaPredictorScreen> {
                   borderRadius:
                       BorderRadius.circular(AppRadius.button)),
             ),
-            onPressed: _hitung,
+            onPressed: effReady ? () => _hitung() : null,
           ),
         ),
       ),
       body: ResponsiveList(controller: _scroll, children: [
         if (widget.event != null) _EventHeader(event: widget.event!),
+        // ---------- MODE: OTOMATIS vs MANUAL ----------
+        _ModeSwitch(
+          mode: _mode,
+          onChanged: (m) {
+            setState(() => _mode = m);
+            _lastAutoSig = '';
+            if (m == EtaMode.auto) {
+              _syncStartFromGps(track);
+              _hitung(auto: true);
+            }
+          },
+        ),
+        const SizedBox(height: AppSpacing.sm + 2),
         // ---------- HASIL ----------
-        if (p == null && _error == null) _EmptyHint(liveOn: liveOn),
+        if (p == null && _error == null)
+          _EmptyHint(
+              liveOn: liveOn || _mode == EtaMode.auto,
+              auto: _mode == EtaMode.auto,
+              gpsReady: gpsReady),
         if (_error != null)
           Card(
             color: context.danger.withValues(alpha: 0.12),
@@ -400,9 +593,28 @@ class _EtaState extends ConsumerState<EtaPredictorScreen> {
         AppSectionCard(
           step: '1',
           title: 'Rencana gowes',
-          subtitle: 'Target & batas waktu dari panitia',
+          subtitle: 'Pilih preset atau isi target & COT dari panitia',
           child: Column(
             children: [
+              // Preset Audax sekali ketuk (referensi aplikasi brevet).
+              Wrap(
+                spacing: AppSpacing.sm,
+                runSpacing: AppSpacing.sm,
+                children: [
+                  for (final pr in _etaPresets)
+                    FilterChip(
+                      label: Text(pr.label,
+                          style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700)),
+                      selected:
+                          _num(targetC) == pr.km && _num(cotC) == pr.cotH,
+                      onSelected: (_) =>
+                          _applyPreset(pr.km, pr.cotH, pr.step),
+                    ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm + 2),
               ResponsiveTwoColumn(
                 breakpoint: 360,
                 first: AppTextField(
@@ -451,10 +663,113 @@ class _EtaState extends ConsumerState<EtaPredictorScreen> {
         ),
         const SizedBox(height: AppSpacing.sm + 2),
         // ---------- INPUT 2: POSISI ----------
+        // Mode auto: kartu GPS live (ala Strava/Garmin) + CTA bila belum rekam.
+        // Mode manual: field ketik seperti dulu (simulasi pra-gowes).
+        if (_mode == EtaMode.auto)
+          AppSectionCard(
+            step: '2',
+            title: 'Posisi otomatis (GPS)',
+            subtitle: gpsReady
+                ? 'Terhubung — hasil update sendiri'
+                : 'Mulai rekam agar terisi sendiri',
+            trailing: _FilledBadge(
+                text: gpsReady ? 'GPS' : '$filledCount/3',
+                done: gpsReady || canHitung,
+                tooltip: gpsReady
+                    ? 'Data dari GPS yang merekam'
+                    : 'Jumlah field posisi yang terisi'),
+            child: Column(
+              children: [
+                _LiveGpsCard(
+                  track: track,
+                  gpsReady: gpsReady,
+                  onOpenTrack: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const TrackScreen())),
+                  onSyncStart: () => _syncStartFromGps(track),
+                ),
+                if (!gpsReady) ...[
+                  const SizedBox(height: AppSpacing.sm + 2),
+                  Text(
+                    'Belum merekam — atau isi manual di bawah, hasil tetap dihitung otomatis.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  _StepperField(
+                    controller: kmC,
+                    label: 'Saya di KM berapa?',
+                    hint: 'cth 45',
+                    icon: Icons.route_outlined,
+                    suffix: 'km',
+                    minusTooltip: 'Kurangi 1 km',
+                    plusTooltip: 'Tambah 1 km',
+                    onMinus: () => _bump(kmC, -1, fraction: 1),
+                    onPlus: () => _bump(kmC, 1, fraction: 1),
+                    extra: FilledButton.tonal(
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(56, 48),
+                        padding: EdgeInsets.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                      ),
+                      onPressed: () => _bump(kmC, 5, fraction: 1),
+                      child: const Text('+5',
+                          style: TextStyle(fontWeight: FontWeight.w800)),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm + 2),
+                  _StepperField(
+                    controller: speedC,
+                    label: 'Rata-rata speed',
+                    hint: 'cth 22.5',
+                    icon: Icons.speed_outlined,
+                    suffix: 'km/h',
+                    minusTooltip: 'Kurangi 1 km/h',
+                    plusTooltip: 'Tambah 1 km/h',
+                    onMinus: () => _bump(speedC, -1, fraction: 1),
+                    onPlus: () => _bump(speedC, 1, fraction: 1),
+                  ),
+                  const SizedBox(height: AppSpacing.sm + 2),
+                  _StepperField(
+                    controller: elapsedC,
+                    label: 'Waktu tempuh',
+                    hint: 'cth 120',
+                    icon: Icons.schedule_outlined,
+                    suffix: 'mnt',
+                    minusTooltip: 'Kurangi 5 menit',
+                    plusTooltip: 'Tambah 5 menit',
+                    onMinus: () => _bump(elapsedC, -5),
+                    onPlus: () => _bump(elapsedC, 5),
+                  ),
+                ],
+                const SizedBox(height: AppSpacing.md),
+                Wrap(
+                    spacing: AppSpacing.sm,
+                    runSpacing: AppSpacing.sm,
+                    children: [
+                      FilledButton.tonalIcon(
+                        icon:
+                            const Icon(Icons.history_outlined, size: 18),
+                        label: const Text('Dari jam start'),
+                        onPressed: _fillElapsedFromStart,
+                      ),
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.restart_alt_outlined,
+                            size: 18),
+                        label: const Text('Reset'),
+                        onPressed: _reset,
+                      ),
+                    ]),
+              ],
+            ),
+          )
+        else
         AppSectionCard(
           step: '2',
           title: 'Posisi saat ini',
-          subtitle: 'Isi minimal 2 dari 3 — sisanya dihitung otomatis',
+          subtitle: 'Simulasi manual — isi 2 dari 3, otomatis terhitung',
           trailing: _FilledBadge(
               text: '$filledCount/3',
               done: canHitung,
@@ -476,7 +791,7 @@ class _EtaState extends ConsumerState<EtaPredictorScreen> {
                 alignment: Alignment.centerLeft,
                 child: Text(
                   canHitung
-                      ? 'Siap dihitung — tekan HITUNG di bawah.'
+                      ? 'Siap — hasil terhitung otomatis di atas.'
                       : 'Kurang ${2 - filledCount} lagi agar bisa dihitung.',
                   style: TextStyle(
                       fontSize: 12,
@@ -600,11 +915,11 @@ class _EtaState extends ConsumerState<EtaPredictorScreen> {
   /// Panduan penggunaan Anti-COT untuk hari-H event.
   void _showGuide() {
     const steps = [
-      ('1. Siapkan rencana', 'Isi Target (km) dan COT total (jam) dari panitia. Atur jam start sesuai flag-off. Buka dari tab Event agar target terisi otomatis.'),
-      ('2. Catat posisi live', 'Selama gowes, isi minimal 2 dari 3: KM posisi, avg speed, waktu tempuh. Sisanya dilengkapi otomatis saat tekan HITUNG.'),
-      ('3. Tekan HITUNG', 'Hasil dikunci: verdict AMAN / WASPADA / OVER COT, proyeksi jam finis, dan pace yang dibutuhkan di sisa jarak.'),
-      ('4. Ikuti checkpoint', 'Tabel checkpoint menunjukkan jam berapa kamu HARUS tiba di tiap KM agar tidak kena COT. Badge hijau = pace-mu cukup, merah = perlu ngebut sedikit.'),
-      ('5. Update tiap checkpoint', 'Tiap tiba di pos, update KM + tekan HITUNG lagi. Nyalakan Timer live agar waktu tempuh berjalan sendiri tiap 30 detik.'),
+      ('1. Pilih preset / event', 'Ketuk chip Audax (100K/200K/…) atau buka dari tab Event agar target + COT terisi otomatis. Jam start ikut flag-off.'),
+      ('2. Gowes + rekam GPS', 'Mode OTOMATIS mengambil KM, speed, dan waktu langsung dari rekaman GPS — hasil update sendiri tiap ada posisi baru.'),
+      ('3. Baca verdict live', 'AMAN / WASPADA / OVER COT + proyeksi jam finis + pace "Butuh sisa". Jaga pace di atas "Butuh sisa" sejak awal.'),
+      ('4. Ikuti checkpoint', 'Tabel menunjukkan jam berapa kamu HARUS tiba di tiap KM. Badge hijau = pace cukup, merah = perlu ngebut sedikit.'),
+      ('5. Mode manual = simulasi', 'Pindah ke MANUAL untuk simulasi sebelum gowes: isi 2 dari 3 (KM/speed/waktu), hasil terhitung otomatis.'),
       ('Aturan praktis', 'Jaga pace sedikit DI ATAS "Butuh sisa" sejak awal — tanjakan, angin, dan pit-stop selalu memakan cadangan waktumu.'),
     ];
     showModalBottomSheet(
@@ -651,6 +966,206 @@ class _EtaState extends ConsumerState<EtaPredictorScreen> {
       ),
     );
   }
+}
+
+/// Saklar mode OTOMATIS (GPS) vs MANUAL — ala Strava/Garmin yang
+/// default-nya live tanpa ketik, manual hanya untuk simulasi.
+class _ModeSwitch extends StatelessWidget {
+  final EtaMode mode;
+  final ValueChanged<EtaMode> onChanged;
+  const _ModeSwitch({required this.mode, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+      ),
+      child: Row(children: [
+        Expanded(
+          child: _modeBtn(
+            context,
+            selected: mode == EtaMode.auto,
+            icon: Icons.autorenew_outlined,
+            label: 'OTOMATIS',
+            sub: 'dari GPS',
+            onTap: () => onChanged(EtaMode.auto),
+          ),
+        ),
+        Expanded(
+          child: _modeBtn(
+            context,
+            selected: mode == EtaMode.manual,
+            icon: Icons.edit_outlined,
+            label: 'MANUAL',
+            sub: 'simulasi',
+            onTap: () => onChanged(EtaMode.manual),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  Widget _modeBtn(BuildContext context,
+      {required bool selected,
+      required IconData icon,
+      required String label,
+      required String sub,
+      required VoidCallback onTap}) {
+    final scheme = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? scheme.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppRadius.pill),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon,
+                size: 18,
+                color: selected
+                    ? scheme.onPrimary
+                    : scheme.onSurfaceVariant),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(label,
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: selected
+                            ? scheme.onPrimary
+                            : scheme.onSurface)),
+                Text(sub,
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: selected
+                            ? scheme.onPrimary.withValues(alpha: 0.85)
+                            : scheme.onSurfaceVariant)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Kartu GPS live (ala Garmin Edge): status koneksi + 3 angka + CTA.
+/// Tidak ada ketikan — semua dari [trackRecorderProvider].
+class _LiveGpsCard extends StatelessWidget {
+  final TrackState track;
+  final bool gpsReady;
+  final VoidCallback onOpenTrack;
+  final VoidCallback onSyncStart;
+  const _LiveGpsCard(
+      {required this.track,
+      required this.gpsReady,
+      required this.onOpenTrack,
+      required this.onSyncStart});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final recording = track.status == TrackStatus.recording;
+    final paused = track.status == TrackStatus.paused;
+    final statusText = recording
+        ? '● MEREKAM'
+        : paused
+            ? '⏸ JEDA'
+            : track.status == TrackStatus.finished
+                ? '✓ SELESAI'
+                : '○ BELUM REKAM';
+    final statusColor = recording
+        ? context.success
+        : paused
+            ? context.warning
+            : scheme.onSurfaceVariant;
+    final km = track.distanceKm.toStringAsFixed(1);
+    final spd = track.elapsedSec > 0
+        ? (track.distanceM / track.elapsedSec * 3.6).toStringAsFixed(1)
+        : '0.0';
+    final mm = track.elapsedSec ~/ 60;
+    final hh = mm ~/ 60;
+    final elapsed = hh > 0 ? '${hh}j ${mm % 60}m' : '${mm}m';
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: statusColor.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(AppRadius.card),
+        border: Border.all(color: statusColor.withValues(alpha: 0.4)),
+      ),
+      child: Column(children: [
+        Row(children: [
+          Icon(recording ? Icons.gps_fixed : Icons.gps_not_fixed,
+              size: 18, color: statusColor),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(statusText,
+                style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                    color: statusColor)),
+          ),
+          if (track.accuracyM > 0)
+            Text('±${track.accuracyM.toStringAsFixed(0)} m',
+                style: Theme.of(context).textTheme.bodySmall),
+        ]),
+        const SizedBox(height: AppSpacing.sm),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _liveNum(context, km, 'KM'),
+            _liveNum(context, spd, 'KM/H'),
+            _liveNum(context, elapsed, 'WAKTU'),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Row(children: [
+          Expanded(
+            child: FilledButton.tonalIcon(
+              icon: const Icon(Icons.fiber_manual_record, size: 18),
+              label: Text(recording || paused
+                  ? 'Lihat Peta'
+                  : 'Mulai Rekam GPS'),
+              onPressed: onOpenTrack,
+            ),
+          ),
+          if (gpsReady) ...[
+            const SizedBox(width: AppSpacing.sm),
+            IconButton.filledTonal(
+              icon: const Icon(Icons.sync_outlined, size: 18),
+              tooltip: 'Samakan jam start dengan GPS',
+              onPressed: onSyncStart,
+            ),
+          ],
+        ]),
+      ]),
+    );
+  }
+
+  Widget _liveNum(BuildContext context, String v, String l) => Column(
+        children: [
+          Text(v,
+              style: const TextStyle(
+                  fontSize: 22, fontWeight: FontWeight.w800)),
+          Text(l,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(fontWeight: FontWeight.w700)),
+        ],
+      );
 }
 
 /// Header event: ikon flag dalam lingkaran aksen + nama + meta.
@@ -703,11 +1218,21 @@ class _EventHeader extends StatelessWidget {
 /// Petunjuk awal sebelum ada hasil — lebih jelas dari sekadar teks tengah.
 class _EmptyHint extends StatelessWidget {
   final bool liveOn;
-  const _EmptyHint({required this.liveOn});
+  final bool auto;
+  final bool gpsReady;
+  const _EmptyHint({required this.liveOn, this.auto = false, this.gpsReady = false});
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final title = auto
+        ? (gpsReady ? 'Menghitung otomatis…' : 'Mulai rekam GPS — beres')
+        : 'Isi data — otomatis terhitung';
+    final body = auto
+        ? (gpsReady
+            ? 'Data GPS masuk, hasil muncul sendiri di bawah.'
+            : '1. Pilih preset Audax → 2. Buka Rekam GPS & tekan Mulai → 3. Kembali ke sini, ETA jalan sendiri.')
+        : '1. Pilih preset → 2. Isi 2 dari 3 posisi → 3. Hasil terhitung otomatis.';
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.lg),
@@ -728,11 +1253,11 @@ class _EmptyHint extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Isi data lalu tekan HITUNG',
+                  Text(title,
                       style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: AppSpacing.xs),
                   Text(
-                    '1. Isi rencana → 2. Isi 2 dari 3 posisi → 3. HITUNG. Hasil dikunci sampai HITUNG ditekan lagi.',
+                    body,
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ],

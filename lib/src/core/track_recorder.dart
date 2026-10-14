@@ -114,6 +114,8 @@ class TrackRecorder extends Notifier<TrackState> {
   bool _useBg = false;
   int _uiSeq = 0;
   bool _syncPending = false;
+  // Gate kualitas GPS (bagi pakai dengan service latar agar identik).
+  final TrackFilter _filter = TrackFilter();
 
   /// Service latar hanya ada di Android/iOS native.
   bool get _supportsBg =>
@@ -167,14 +169,26 @@ class TrackRecorder extends Notifier<TrackState> {
 
   /// Izin khusus latar (best-effort, tak fatal bila ditolak — HP tetap
   /// merekam saat app di depan; sebagian HP membatasi saat layar mati).
+  /// Urutan penting di Android 13/14+: notifikasi dulu, lalu lokasi-latar.
+  /// Semuanya dibungkus try/catch agar TIDAK pernah melempar → tak ada FC.
   Future<void> _ensureBgPermissions() async {
     try {
       if (defaultTargetPlatform == TargetPlatform.android) {
-        await Permission.locationAlways.request();
-        await Permission.notification.request();
-        await Permission.ignoreBatteryOptimizations.request();
+        try {
+          await Permission.notification.request();
+        } catch (_) {}
+        try {
+          // locationAlways hanya valid bila foreground sudah granted
+          // (dipastikan ensurePermission() sebelum ini).
+          await Permission.locationAlways.request();
+        } catch (_) {}
+        try {
+          await Permission.ignoreBatteryOptimizations.request();
+        } catch (_) {}
       } else {
-        await Permission.locationAlways.request();
+        try {
+          await Permission.locationAlways.request();
+        } catch (_) {}
       }
     } catch (_) {}
   }
@@ -449,6 +463,7 @@ class TrackRecorder extends Notifier<TrackState> {
     _pausedTotalSec = 0;
     _pauseBegan = null;
     _autoPausedNow = false;
+    _filter.reset();
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     state = TrackState(
       status: TrackStatus.recording,
@@ -460,10 +475,9 @@ class TrackRecorder extends Notifier<TrackState> {
       accuracyM: state.accuracyM,
       lastEventMs: nowMs,
     );
-    const settings = LocationSettings(
-      accuracy: LocationAccuracy.bestForNavigation,
-      distanceFilter: 5, // hemat baterai: update tiap ~5 m
-    );
+    // Sampling 1 Hz ala Strava (lihat cyclingLocationSettings): tikungan
+    // terekam utuh, bukan terpotong segmen 5-meteran.
+    final settings = cyclingLocationSettings();
     _sub = Geolocator.getPositionStream(locationSettings: settings).listen(
       _onFix,
       onError: (Object e) {
@@ -493,7 +507,7 @@ class TrackRecorder extends Notifier<TrackState> {
         state.status != TrackStatus.paused) {
       return;
     }
-    // Akurasi buruk → tampilkan tapi jangan rekam ke rute.
+    // Titik peta selalu hidup (dot), walau fix-nya tak layak simpan.
     state = state.copyWith(
       currentLat: pos.latitude,
       currentLng: pos.longitude,
@@ -501,27 +515,21 @@ class TrackRecorder extends Notifier<TrackState> {
       currentSpeedMs: pos.speed < 0 ? 0 : pos.speed,
       lastEventMs: DateTime.now().millisecondsSinceEpoch,
     );
-    if (pos.accuracy > 0 && pos.accuracy > 25) return;
+    // Jeda MANUAL: rute berhenti total (dulu stream tetap menambah jarak
+    // saat jeda — samakan dengan mesin service latar).
+    if (state.status == TrackStatus.paused) return;
 
     final now = DateTime.now().millisecondsSinceEpoch;
-    final pts = List<GpsPoint>.of(state.points);
-    final seed = rawFixToFilteredSeed(
-        pos.latitude, pos.longitude, pos.altitude, now, pos.accuracy);
-    if (seed == null) return;
-    if (pts.isEmpty) {
-      pts.add(seed);
-    } else {
-      final prev = pts.last;
-      final dt = (seed.t - prev.t) / 1000.0;
-      if (dt <= 0) return;
-      final d = haversineM(prev.lat, prev.lng, seed.lat, seed.lng);
-      if (d / dt > 22.2) return; // GPS jump
-      if (d < 2.0 && dt < 3) {
-        // Diam: jangan tambah poin, tapi deteksi auto-pause.
-      } else {
-        pts.add(seed);
-      }
-    }
+    final seed = _filter.add(
+      lat: pos.latitude,
+      lng: pos.longitude,
+      ele: pos.altitude,
+      t: now,
+      acc: pos.accuracy,
+      speedMs: pos.speed,
+    );
+    if (seed == null) return; // akurasi buruk / diam / jump / duplikat
+    final pts = List<GpsPoint>.of(state.points)..add(seed);
 
     // Auto-pause ala Strava: diam >10 dtk → pause otomatis (jarak berhenti).
     if (state.autoPause && pts.length >= 2) {
@@ -616,6 +624,7 @@ class TrackRecorder extends Notifier<TrackState> {
     _pausedTotalSec = 0;
     _pauseBegan = null;
     _autoPausedNow = false;
+    _filter.reset();
     _useBg = false;
     _uiSeq = 0;
     _syncPending = false;
