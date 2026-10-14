@@ -56,15 +56,14 @@ void resetMapTileErrors() => mapTileErrorCount.value = 0;
 
 /// Satu-satunya konstruktor TileLayer yang dipakai seluruh app.
 /// Konsisten → sekali perbaiki, semua peta (rekam/detail/jelajah) ikut sembuh.
-/// [dark] = filter gelap bawaan flutter_map di atas tile OSM yang sama
-/// (tanpa server/API key tambahan) — enak untuk gowes malam (keuntungan PRO).
+/// [dark] = tile gelap ASLI Esri Canvas Dark Gray (bukan filter) — enak untuk
+/// gowes malam (keuntungan PRO). Tanpa filter tambahan agar tidak double-gelap.
 TileLayer osmTiles({bool dark = false}) {
   return TileLayer(
     urlTemplate: dark ? _esriDarkUrl : _esriLightUrl,
     fallbackUrl: _hotUrl,
     maxZoom: 19,
     userAgentPackageName: _appPackage,
-    tileBuilder: dark ? darkModeTileBuilder : null,
     // Jangan spam terminal saat offline / 403: cukup fallback yang tampil.
     // Error-nya dicatat ke [mapTileErrorCount] agar UI bisa menjelaskan
     // dengan badge, bukan layar abu-abu misterius.
