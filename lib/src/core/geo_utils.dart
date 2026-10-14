@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
+import 'package:geolocator/geolocator.dart';
 import '../models/models.dart';
 
 /// Util GPS untuk rekaman ala Strava: filter, jarak, elevasi, simplify,
@@ -85,6 +87,114 @@ GpsPoint? rawFixToFilteredSeed(
   final fixes = [RawGpsFix(lat, lng, ele, t, acc)];
   final out = filterRawPoints(fixes);
   return out.isEmpty ? null : out.first;
+}
+
+/// Pengaturan sampling GPS ala Strava: 1 Hz + filter jarak 3 m.
+///
+/// Kenapa bukan default generik? [LocationSettings] polos di Android
+/// tidak menentukan interval → update jarang/tak menentu sehingga tikungan
+/// terpotong (jarak kurang) dan garis bergerigi. Dengan interval 1 dtk +
+/// Fused Provider, HP mencatat tiap detik saat bergerak: tikungan akurat,
+/// baterai tetap aman untuk ride 2–4 jam (foreground service).
+LocationSettings cyclingLocationSettings() {
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+    return AndroidSettings(
+      accuracy: LocationAccuracy.bestForNavigation,
+      distanceFilter: 3,
+      intervalDuration: const Duration(seconds: 1),
+    );
+  }
+  if (!kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.macOS)) {
+    return AppleSettings(
+      accuracy: LocationAccuracy.bestForNavigation,
+      distanceFilter: 3,
+      activityType: ActivityType.fitness,
+      allowBackgroundLocationUpdates: true,
+      pauseLocationUpdatesAutomatically: false,
+    );
+  }
+  return const LocationSettings(
+    accuracy: LocationAccuracy.bestForNavigation,
+    distanceFilter: 3,
+  );
+}
+
+/// Filter GPS inkremental untuk perekaman live (Strava-like).
+///
+/// SATU-SATUNYA gate yang dipakai kedua jalur perekam
+/// ([track_service.dart] foreground-service dan legacy [track_recorder.dart])
+/// agar perilakunya identik:
+/// - Titik PERTAMA butuh akurasi ≤ 15 m → rute tak mulai miring puluhan
+///   meter (sumber #1 keluhan "GPS tidak akurat").
+/// - Titik jalan butuh akurasi ≤ 25 m.
+/// - Diam (kecepatan Doppler < 0,5 m/s) → titik DIBEKUKAN: jarak tak
+///   merambat saat lampu merah. Doppler jauh lebih andal daripada selisih
+///   posisi (yang selalu berdesis ±3–5 m walau HP diam di meja).
+/// - Lompatan mustahil (> 80 km/h antar titik, mis. pantulan gedung)
+///   dibuang; titik duplikat/burst (< 1 dtk) dibuang.
+/// - Elevasi disimpan sebagai rata-rata 5 titik terakhir → gain elevasi
+///   tak menggelembung oleh noise altitude GPS (±10 m).
+class TrackFilter {
+  static const double firstFixAccuracyM = 15;
+  static const double maxAccuracyM = 25;
+  static const double maxSpeedMs = 22.2; // ~80 km/h
+  static const double minDtSec = 1.0;
+  static const double stillSpeedMs = 0.5;
+  static const int eleWindow = 5;
+
+  GpsPoint? _last;
+  final List<double> _eleWin = [];
+
+  bool get hasFix => _last != null;
+  GpsPoint? get last => _last;
+
+  void reset() {
+    _last = null;
+    _eleWin.clear();
+  }
+
+  /// Kembalikan titik SIAP SIMPAN, atau null bila fix harus dibuang /
+  /// dibekukan. [speedMs] = kecepatan Doppler dari GPS (pos.speed);
+  /// nilai < 0 berarti unknown (sebagian chipset) → pakai aturan
+  /// selisih-posisi sebagai fallback.
+  GpsPoint? add({
+    required double lat,
+    required double lng,
+    required double ele,
+    required int t,
+    required double acc,
+    required double speedMs,
+  }) {
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+    if (lat == 0 && lng == 0) return null;
+    final prev = _last;
+    if (prev == null) {
+      if (acc > 0 && acc > firstFixAccuracyM) return null;
+      return _accept(lat, lng, ele, t);
+    }
+    if (acc > 0 && acc > maxAccuracyM) return null;
+    final dt = (t - prev.t) / 1000.0;
+    if (dt < minDtSec) return null;
+    final d = haversineM(prev.lat, prev.lng, lat, lng);
+    if (dt > 0 && d / dt > maxSpeedMs) return null; // GPS jump
+    if (speedMs >= 0 && speedMs < stillSpeedMs) return null; // diam: freeze
+    if (speedMs < 0 && d < 2.0 && dt < 3) return null; // fallback chipset jadul
+    return _accept(lat, lng, ele, t);
+  }
+
+  GpsPoint _accept(double lat, double lng, double ele, int t) {
+    _eleWin.add(ele);
+    if (_eleWin.length > eleWindow) _eleWin.removeAt(0);
+    var s = 0.0;
+    for (final e in _eleWin) {
+      s += e;
+    }
+    final p = GpsPoint(lat: lat, lng: lng, ele: s / _eleWin.length, t: t);
+    _last = p;
+    return p;
+  }
 }
 
 /// Douglas-Peucker: sederhanakan polyline agar DB ringan.
