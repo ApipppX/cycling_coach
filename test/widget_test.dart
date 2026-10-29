@@ -231,4 +231,27 @@ void main() {
     ];
     expect(analyzeCoach(five, 185).confidence, contains('SEDANG'));
   });
+
+  test('metrik TSS/NP/IF/VI konsisten', () {
+    // Sesi 60 menit @30 km/jam. FTP proxy = 0,95 × 30 = 28,5 km/jam.
+    final ride = CyclingActivity(
+      name: 'TT 1 jam', distance: 30000, totalElevationGain: 0,
+      averageSpeed: 30 / 3.6, startDate: ymd(0), durationSec: 3600,
+    );
+    final a = analyzeCoach([ride], 185);
+    // NP sesi tunggal ≈ kecepatan sesi (m/s → km/jam).
+    expect(a.normalizedPower * 3.6, closeTo(30, 0.1));
+    // IF = speed / FTP = 1 / 0,95.
+    expect(a.intensityFactor, closeTo(1 / 0.95, 0.01));
+    // TSS 60 mnt = 100 × IF² ≈ 110,8.
+    expect(a.tss, closeTo(100 / (0.95 * 0.95), 1.0));
+    // VI sesi tunggal ≈ 1,0 (NP = rata-rata).
+    expect(a.variabilityIndex, closeTo(1.0, 0.01));
+    // Training load kumulatif ≥ TSS 7 hari.
+    expect(a.trainingLoad, greaterThanOrEqualTo(a.tss));
+    // TSB TSS = CTL − ATL.
+    expect(a.tsbTss, closeTo(a.ctlTss - a.atlTss, 1e-9));
+    // Cakupan metrik lanjutan valid 0..1.
+    expect(a.advancedMetricCoverage, inInclusiveRange(0.0, 1.0));
+  });
 }

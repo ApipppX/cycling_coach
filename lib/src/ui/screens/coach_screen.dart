@@ -94,6 +94,25 @@ class CoachScreen extends ConsumerWidget {
               avatar: const Icon(Icons.local_fire_department, size: 16),
               label: Text('7 hari: ${kcal7.toStringAsFixed(0)} kkal')),
         ]),
+        // Badge metrik lanjutan profesional
+        const SizedBox(height: AppSpacing.sm),
+        Wrap(spacing: AppSpacing.xs, runSpacing: AppSpacing.xs, children: [
+          _ProBadge(
+              icon: Icons.electric_bolt, label: 'NP',
+              value: (analysis.normalizedPower * 3.6).toStringAsFixed(1)),
+          _ProBadge(
+              icon: Icons.trending_up, label: 'IF',
+              value: '${(analysis.intensityFactor * 100).toStringAsFixed(0)}%'),
+          _ProBadge(
+              icon: Icons.multiline_chart, label: 'VI',
+              value: '${(analysis.variabilityIndex * 100).toStringAsFixed(0)}%'),
+          _ProBadge(
+              icon: Icons.train, label: 'TSS',
+              value: analysis.tss.toStringAsFixed(0)),
+          _ProBadge(
+              icon: Icons.scale, label: 'TL',
+              value: analysis.trainingLoad.toStringAsFixed(0)),
+        ]),
         const SizedBox(height: AppSpacing.md),
         Card(
             child: Padding(
@@ -129,6 +148,17 @@ class CoachScreen extends ConsumerWidget {
                           'TRIMP 7 hari: ${analysis.trimp7.toStringAsFixed(0)} • Elevasi total: ${fmtInt(analysis.totalElevationM.toInt())} m',
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis),
+                      Text(
+                          'TSS 7 hari: ${analysis.tss.toStringAsFixed(0)} • Model TSS: CTL ${analysis.ctlTss.toStringAsFixed(0)} / ATL ${analysis.atlTss.toStringAsFixed(0)} / TSB ${analysis.tsbTss.toStringAsFixed(0)}',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall),
+                      if (analysis.advancedMetricCoverage < 0.6)
+                        Text(
+                            'Cakupan metrik lanjutan ${(analysis.advancedMetricCoverage * 100).round()}% — tambah sesi >20 mnt dengan HR untuk akurasi NP/IF/TSS.',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic)),
                       const SizedBox(height: AppSpacing.sm),
                       const _Label('Struktur minggu'),
                       Text('Mix 7 hari: ${analysis.weekMix}',
@@ -138,7 +168,7 @@ class CoachScreen extends ConsumerWidget {
                           maxLines: 3,
                           overflow: TextOverflow.ellipsis),
                       const SizedBox(height: AppSpacing.sm),
-                      Text(analysis.confidence,
+                      Text('${analysis.confidence} Skor data: ${analysis.confidenceScore}/100.',
                           maxLines: 3,
                           overflow: TextOverflow.ellipsis,
                           style:
@@ -193,6 +223,40 @@ class _Label extends StatelessWidget {
       child: Text(text.toUpperCase(),
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
               fontWeight: FontWeight.w800, letterSpacing: 1.1)),
+    );
+  }
+}
+
+class _ProBadge extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  const _ProBadge({required this.icon, required this.label, required this.value});
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 13, color: scheme.primary),
+        const SizedBox(width: 4),
+        Text(label,
+            style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: scheme.onSurfaceVariant)),
+        const SizedBox(width: 4),
+        Text(value,
+            style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: scheme.onSurface)),
+      ]),
     );
   }
 }

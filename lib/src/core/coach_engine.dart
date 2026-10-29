@@ -45,6 +45,32 @@ class CoachAnalysis {
   final String latestDate; // yyyy-MM-dd sesi acuan
   final List<String> warnings;
 
+  // ---- Metrik Performa Lanjutan (Power-based, Power Law) ----
+  /// Normalized Power: akar ke-4 rata-rata kuadrik kecepatan (m/s) berbobot durasi.
+  /// Lebih akurat dari rata-rata sederhana untuk sesi bergelombang (interval).
+  final double normalizedPower; // m/s (NP)
+  /// Intensity Factor: NP / rata-rata kecepatan sesi panjang (>20 mnt).
+  /// IF >1,0 = sesi dengan fluktuasi intensitas tinggi (khas interval).
+  final double intensityFactor;
+  /// Training Stress Score (TSS): (durasiMenit × NP × IF) / (FTP × 3600) × 100.
+  /// FTP = 0,95 × kecepatan rata-rata sesi terpanjang (proxy tanpa power meter).
+  final double tss;
+  /// Variability Index: NP / rata-rata kecepatan (m/s).
+  /// VI >1,1 = beban tidak rata (interval); VI ~1,0 = pace datar.
+  final double variabilityIndex;
+  /// Training Load: TSS × durasiMenit (beban kerja absolut).
+  final double trainingLoad;
+  /// Chronic Training Load (CTL) berbasis TSS (7 & 42 hari).
+  final double ctlTss;
+  /// Acute Training Load (ATL) berbasis TSS (7 hari).
+  final double atlTss;
+  /// Training Stress Balance (TSB) berbasis TSS: CTL - ATL.
+  final double tsbTss;
+  /// Akurasi metrik NP/IF/TSS: 0..1 (butuh 1 sesi >20 mnt + HR).
+  final double advancedMetricCoverage;
+  /// Skor keyakinan analisis 0..100 (sesi, HR coverage, rentang hari, metrik).
+  final int confidenceScore;
+
   const CoachAnalysis({
     required this.totalKm,
     required this.totalRides,
@@ -79,6 +105,16 @@ class CoachAnalysis {
     required this.latestName,
     required this.latestDate,
     required this.warnings,
+    this.normalizedPower = 0,
+    this.intensityFactor = 0,
+    this.tss = 0,
+    this.variabilityIndex = 0,
+    this.trainingLoad = 0,
+    this.ctlTss = 0,
+    this.atlTss = 0,
+    this.tsbTss = 0,
+    this.advancedMetricCoverage = 0,
+    this.confidenceScore = 0,
   });
 }
 
@@ -256,6 +292,9 @@ CoachAnalysis analyzeCoach(List<CyclingActivity> activities, int maxHr, [EventGo
       todayDetail: 'Jaga HR di Z2 (60–70% HRmax). Fokus konsistensi, bukan kecepatan.',
       hrZones: {}, hrZoneMinutes: {}, latestName: '-', latestDate: '-',
       warnings: ['Tambahkan minimal 3 latihan agar analisis akurat.'],
+      normalizedPower: 0, intensityFactor: 0, tss: 0,
+      variabilityIndex: 0, trainingLoad: 0,
+      ctlTss: 0, atlTss: 0, tsbTss: 0, advancedMetricCoverage: 0,
     );
   }
 
@@ -282,6 +321,78 @@ CoachAnalysis analyzeCoach(List<CyclingActivity> activities, int maxHr, [EventGo
   final hrCoverage = withHr.length / activities.length;
   final totalElev = activities.fold<double>(0, (s, a) => s + a.totalElevationGain);
   final avgDurationMin = activities.map(durationMinOf).reduce((a, b) => a + b) / activities.length;
+
+  // ---- Metrik performa lanjutan (model "power" tanpa power meter) ----
+  /// Proxy FTP (m/s) dari sesi terpanjang > 20 menit — tahan lama terbaiknya
+  /// mewakili daya konstan yang bisa dipertahankan circa 1 jam.
+  double longestAvgSpeed = 0;
+  final longRide = activities.where((a) => durationMinOf(a) > 20);
+  if (longRide.isNotEmpty) {
+    longestAvgSpeed = longRide.map((a) => a.averageSpeed).reduce(math.max);
+  }
+  final ftpMs = longestAvgSpeed * 0.95;
+
+  /// Normalized Power (m/s): akar ke-4 dari rata-rata kuadrik kecepatan.
+  /// Menangkap biaya fisiologis sesi bergelombang (interval, lonjak tanjakan).
+  double sumPow4 = 0, sumDur = 0;
+  for (final a in activities) {
+    final d = durationMinOf(a);
+    if (d <= 0 || a.averageSpeed <= 0) continue;
+    sumPow4 += d * math.pow(a.averageSpeed, 4);
+    sumDur += d;
+  }
+  final normalizedPower = sumDur > 0 ? math.pow(sumPow4 / sumDur, 0.25).toDouble() : 0.0;
+
+  /// Variability Index: NP / rata-rata kecepatan sesi panjang.
+  /// VI >1,1 = beban tidak rata (interval/tanjakan); ~1,0 = pace datar.
+  final variabilityIndex =
+      avgSpeedKmh > 0 && normalizedPower > 0
+          ? normalizedPower * 3.6 / avgSpeedKmh
+          : 0.0;
+
+  /// Intensity Factor: NP / FTP. >1,0 berarti NP melampaui tahanan jam.
+  final intensityFactor = ftpMs > 0 ? normalizedPower / ftpMs : 0.0;
+
+  /// TSS per sesi: (menit/60) × 100 × IF², IF = kecepatan sesi / FTP.
+  /// 100 TSS ≈ 1 jam tepat pada FTP. Dihitung per sesi (bukan global).
+  double tssOf(CyclingActivity a) {
+    final d = durationMinOf(a);
+    if (d <= 0 || ftpMs <= 0 || a.averageSpeed <= 0) return 0;
+    final ifv = a.averageSpeed / ftpMs;
+    return (d / 60.0) * 100 * ifv * ifv;
+  }
+
+  /// TSS 7 hari terakhir (rolling) — beban mingguan terkini.
+  String dayAgoStr(int ago) =>
+      _dayFmt.format(DateTime.now().subtract(Duration(days: ago)));
+  final last7Keys = {for (var i = 0; i < 7; i++) dayAgoStr(i)};
+  final tss = activities
+      .where((a) => last7Keys.contains(a.dateKey))
+      .fold<double>(0, (s, a) => s + tssOf(a));
+
+  /// Training Load = TSS kumulatif sepanjang riwayat (beban kerja absolut).
+  final trainingLoad = activities.fold<double>(0, (s, a) => s + tssOf(a));
+
+  /// CTL/ATL/TSB berbasis TSS (7 & 42 hari).
+  double tssOnDay(int ago) {
+    final target = dayAgoStr(ago);
+    return activities
+        .where((a) => a.dateKey == target)
+        .fold<double>(0, (s, a) => s + tssOf(a));
+  }
+  final ctlTss =
+      List.generate(42, (i) => tssOnDay(i)).fold<double>(0, (a, b) => a + b) /
+          42.0;
+  final atlTss =
+      List.generate(7, (i) => tssOnDay(i)).fold<double>(0, (a, b) => a + b) /
+          7.0;
+  final tsbTss = ctlTss - atlTss;
+
+  /// Cakupan metrik lanjutan (0..1): butuh ≥1 sesi >20 menit + HR untuk akurasi.
+  final advancedMetricCoverage =
+      longRide.isNotEmpty && hrCoverage > 0
+          ? math.min(1.0, longRide.length / 2.0 + hrCoverage * 0.5)
+          : (longRide.isNotEmpty ? 0.5 : 0.0);
 
   final nowMs = DateTime.now().millisecondsSinceEpoch;
   int daysAgo(CyclingActivity a) {
@@ -403,6 +514,28 @@ CoachAnalysis analyzeCoach(List<CyclingActivity> activities, int maxHr, [EventGo
           ? 'Keyakinan: SEDANG — ${activities.length} sesi. Akurasi penuh setelah 8+ sesi dengan HR selama 3+ minggu.'
           : 'Keyakinan: AWAL — tambah sesi dan isi HR tiap latihan agar presisi.');
 
+  // Skor keyakinan numerik 0–100: bobot sesi 40, HR 30, rentang 20, metrik 10.
+  final confidenceScore = ((activities.length.clamp(0, 20) / 20.0) * 40 +
+          hrCoverage * 30 +
+          (spanDays.clamp(0, 42) / 42.0) * 20 +
+          advancedMetricCoverage * 10)
+      .round()
+      .clamp(0, 100);
+
+  // Peringatan berbasis model TSS (pendamping TRIMP).
+  if (tsbTss < -25) {
+    warnings.add(
+        'Model TSS: TSB ${tsbTss.toStringAsFixed(0)} (ATL ${atlTss.toStringAsFixed(0)} vs CTL ${ctlTss.toStringAsFixed(0)}) — beban akut jauh di atas kronis. Kurangi volume 30–40% minggu ini.');
+  }
+  if (tss > 500) {
+    warnings.add(
+        'TSS 7 hari ${tss.toStringAsFixed(0)} tergolong tinggi — sisipkan minimal 2 hari easy/rest agar adaptasi terserap.');
+  }
+  if (variabilityIndex > 1.35 && activities.length >= 3) {
+    warnings.add(
+        'VI ${variabilityIndex.toStringAsFixed(2)}: intensitas fluktuatif (banyak lonjakan keras). Stabilkan pace di sesi easy agar tidak menguras recovery.');
+  }
+
   final newestHr = latest.averageHeartRate;
   final z2lo = (maxHr * 0.6).round(), z2hi = (maxHr * 0.7).round();
   final z3lo = (maxHr * 0.7).round(), z3hi = (maxHr * 0.8).round();
@@ -499,6 +632,16 @@ CoachAnalysis analyzeCoach(List<CyclingActivity> activities, int maxHr, [EventGo
     todayTitle: todayTitle, todayDetail: todayDetail, hrZones: zones,
     hrZoneMinutes: zoneMinutes,
     latestName: latest.name, latestDate: latest.dateKey, warnings: warnings,
+    normalizedPower: normalizedPower,
+    intensityFactor: intensityFactor,
+    tss: tss,
+    variabilityIndex: variabilityIndex,
+    trainingLoad: trainingLoad,
+    ctlTss: ctlTss,
+    atlTss: atlTss,
+    tsbTss: tsbTss,
+    advancedMetricCoverage: advancedMetricCoverage,
+    confidenceScore: confidenceScore,
   );
 }
 
