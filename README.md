@@ -40,8 +40,13 @@ auto-pause, rute tersimpan per sesi, ekspor GPX, analisis beban sport-science
 - **CyclingCoach Pro** (nol-rupiah via kode donasi di paywall): PDF bersih
   tanpa footer promo, gaya peta Gelap untuk gowes malam (Rekam + Jelajah),
   lencana PRO di Profil. Inti app (rekam/coach/statistik) tetap gratis.
-- **Coach AI**: rekomendasi hari ini (rest/easy/interval/tempo/long/taper/event),
-  CTL/ATL/TSB, freshness, mix sesi, peringatan overreach/monotoni/deload.
+- **Coach AI**: rekomendasi hari ini (rest/easy/interval/tempo/long/taper/event)
+  dengan format profesional baku — **Sesi Latihan Berikutnya**, **Catatan Sesi**,
+  **Kenapa Sesi Ini?**, dan **Struktur Minggu**. Metrik beban: TRIMP/CTL/ATL/TSB
+  plus **TSS/NP/IF/VI** (proxy power tanpa power meter), skor keyakinan data,
+  peringatan overreach/monotoni/deload.
+- **Evaluasi Sesi**: **Kesimpulan Utama** (maks. 3 kata), **Kekuatan**, dan
+  **Perhatian** berbasis fisiologi — termasuk saran glikogen pasca-sesi (TSS).
 - **Statistik**: lifetime totals, grafik 8 minggu / 6 bulan / 3 tahun, tren,
   distribusi zona HR, rekor & streak.
 - **Event**: **Kesiapan: %**, **Progres plan**, **Jadwal latihan**, tombol
@@ -286,7 +291,9 @@ ui/screens/session_screens.dart → Detail (**semua otomatis**: tile Jarak/Duras
                                min–maks/kkal + banner ⚡ Terkencang + highlight
                                split tercepat + ElevProfileChart + Split/km +
                                RouteMap + GPX + tabel metrik + catatan) & Evaluasi.
-ui/screens/coach_screen.dart → Kartu sesi berikutnya + kondisi tubuh + warning + PDF.
+ui/screens/coach_screen.dart → Format Coach AI: Sesi Berikutnya, Catatan Sesi,
+                               Kenapa Sesi Ini?, Struktur Minggu + badge TSS/NP/IF/VI
+                               + kondisi tubuh + warning + PDF.
 ui/screens/stats_screen.dart → Total + 3 grafik + tren + zona + rekor + streak.
 ui/screens/event_screen.dart → Goal + readiness + plan + progres + ETA Anti-COT.
 ui/screens/eta_predictor_screen.dart → Kalkulator COT standalone + timer live.

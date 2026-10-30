@@ -334,45 +334,56 @@ class EvaluationScreen extends ConsumerWidget {
             color: color.withValues(alpha: 0.15),
             child: Padding(
               padding: const EdgeInsets.all(AppSpacing.lg),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                      ev.tone == SessionTone.good
-                          ? Icons.check_circle_rounded
-                          : ev.tone == SessionTone.warn
-                              ? Icons.warning_amber_rounded
-                              : Icons.info_rounded,
-                      color: color,
-                      size: 28),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Text(ev.verdict,
-                          maxLines: 2,
-                          style: TextStyle(
-                              fontSize: 20,
+                  Text('KESIMPULAN UTAMA',
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelSmall
+                          ?.copyWith(
                               fontWeight: FontWeight.w800,
-                              color: color)),
-                    ),
+                              letterSpacing: 1.1)),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Icon(
+                          ev.tone == SessionTone.good
+                              ? Icons.check_circle_rounded
+                              : ev.tone == SessionTone.warn
+                                  ? Icons.warning_amber_rounded
+                                  : Icons.info_rounded,
+                          color: color,
+                          size: 28),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: Text(ev.verdict,
+                            maxLines: 2,
+                            style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                                color: color)),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
           ),
           const SectionTitle('Kekuatan'),
-          ...ev.strengths.map((s) => Card(
+          Card(
               child: ListTile(
                   leading:
                       Icon(Icons.check_circle_outline, color: context.success),
-                  title: Text(s, maxLines: 3, overflow: TextOverflow.ellipsis)))),
+                  title: Text(ev.strengths.first,
+                      maxLines: 4, overflow: TextOverflow.ellipsis))),
           const SectionTitle('Perhatian'),
-          ...ev.gaps.map((g) => Card(
+          Card(
               child: ListTile(
                   leading: Icon(Icons.warning_amber_outlined,
                       color: context.warning),
-                  title: Text(g, maxLines: 3, overflow: TextOverflow.ellipsis)))),
+                  title: Text(ev.gaps.first,
+                      maxLines: 4, overflow: TextOverflow.ellipsis))),
           const SizedBox(height: AppSpacing.sm),
           Card(
               child: Padding(

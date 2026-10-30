@@ -71,6 +71,14 @@ class CoachAnalysis {
   /// Skor keyakinan analisis 0..100 (sesi, HR coverage, rentang hari, metrik).
   final int confidenceScore;
 
+  // ---- Narasi Coach AI (format UI baku) ----
+  /// 1–2 kalimat menghubungkan kesiapan (TSB/CTL/ATL) dengan resep sesi.
+  final String sessionNote;
+  /// Penalaran fisiologis mendalam berbasis metrik beban.
+  final String whyThisSession;
+  /// Analisis mikrocycle 7 hari + rencana strategis.
+  final String weekStructure;
+
   const CoachAnalysis({
     required this.totalKm,
     required this.totalRides,
@@ -115,6 +123,9 @@ class CoachAnalysis {
     this.tsbTss = 0,
     this.advancedMetricCoverage = 0,
     this.confidenceScore = 0,
+    this.sessionNote = '',
+    this.whyThisSession = '',
+    this.weekStructure = '',
   });
 }
 
@@ -288,13 +299,17 @@ CoachAnalysis analyzeCoach(List<CyclingActivity> activities, int maxHr, [EventGo
       weekMix: 'Belum ada sesi', weekPlan: 'Mulai 2–3 sesi easy Z2 minggu ini, total 40–60 km.',
       confidence: 'Belum ada data.', recovery: RecoveryStatus.siap,
       recoveryReason: 'Belum ada data. Mulai 2–3 sesi easy minggu ini.',
-      todayType: PlanType.easy, todayTitle: 'Mulai dengan Easy Ride 15 km',
-      todayDetail: 'Jaga HR di Z2 (60–70% HRmax). Fokus konsistensi, bukan kecepatan.',
+      todayType: PlanType.easy, todayTitle: 'Easy Aerobik: 15 km @ Z2',
+      todayDetail: 'Pemanasan 5 mnt Z1. Inti: 15 km Z2 (60–70% HRmax). Pendinginan 5 mnt Z1. Fokus konsistensi, bukan kecepatan.',
       hrZones: {}, hrZoneMinutes: {}, latestName: '-', latestDate: '-',
       warnings: ['Tambahkan minimal 3 latihan agar analisis akurat.'],
       normalizedPower: 0, intensityFactor: 0, tss: 0,
       variabilityIndex: 0, trainingLoad: 0,
       ctlTss: 0, atlTss: 0, tsbTss: 0, advancedMetricCoverage: 0,
+      confidenceScore: 0,
+      sessionNote: 'Belum ada data beban latihan; mulai dengan easy ride Z2 untuk membangun baseline fisiologis.',
+      whyThisSession: 'Tanpa riwayat sesi, CTL/ATL/TSB belum dapat dihitung. Baseline aerobik adalah prioritas pertama sebelum intensitas dinaikkan.',
+      weekStructure: 'Analisis: belum ada sesi dalam 7 hari terakhir. Plan: 2–3 sesi easy Z2 (40–60 km) untuk membentuk data awal.',
     );
   }
 
@@ -562,8 +577,8 @@ CoachAnalysis analyzeCoach(List<CyclingActivity> activities, int maxHr, [EventGo
   if (newestHr >= maxHr * 0.90 && newestHr > 0) {
     recovery = RecoveryStatus.butuhIstirahat;
     reason = 'Sesi terakhir ${(newestHr / maxHr * 100).round()}% HRmax (Z5) dengan TSB ${tsb.toStringAsFixed(0)}. Sistem saraf butuh 24–48 jam pulih penuh.';
-    todayType = PlanType.rest; todayTitle = 'Istirahat Total';
-    todayDetail = 'Tanpa sepeda. Tidur 7–8 jam, protein 1,6 g/kgBB, hidrasi. Boleh jalan ringan 20 menit.';
+    todayType = PlanType.rest; todayTitle = 'Restorasi Total: 24–48 Jam';
+    todayDetail = 'Tanpa sepeda. Tidur 7–8 jam, protein 1,6 g/kgBB, hidrasi 30–35 ml/kgBB. Boleh jalan ringan 20 mnt Z1.';
   } else if (tsb < -30) {
     recovery = RecoveryStatus.butuhIstirahat;
     reason = 'TSB ${tsb.toStringAsFixed(0)}: kelelahan menumpuk (CTL ${ctl.toStringAsFixed(0)} vs ATL ${atl.toStringAsFixed(0)}). Latihan keras sekarang = overtraining.';
@@ -573,32 +588,32 @@ CoachAnalysis analyzeCoach(List<CyclingActivity> activities, int maxHr, [EventGo
     recovery = RecoveryStatus.waspada;
     reason = 'TSB ${tsb.toStringAsFixed(0)} setelah 3 minggu volume naik. Tubuh butuh deload agar adaptasi terserap.';
     todayType = PlanType.easy; todayTitle = 'Deload Easy ${easyDistKm.toStringAsFixed(0)} km Z1';
-    todayDetail = '40–50 mnt sangat santai, HR di bawah ${(maxHr * 0.6).round()} bpm. Tanpa interval minggu ini.';
+    todayDetail = 'Pemanasan 10 mnt Z1. Inti: 35–40 mnt Z1 (HR <${(maxHr * 0.6).round()} bpm). Pendinginan 5 mnt. Tanpa interval minggu ini.';
   } else if (backToBackHard) {
     recovery = RecoveryStatus.waspada;
     reason = 'Dua sesi keras beruntun ("${last2[1].name}" lalu "${last2[0].name}"). Sistem kardiovaskular butuh 1 hari easy agar adaptasi terserap, bukan ditumpuk.';
-    todayType = PlanType.easy; todayTitle = 'Recovery ${easyDistKm.toStringAsFixed(0)} km Z1–Z2';
-    todayDetail = '35–45 mnt sangat santai. HR $z2lo–$z2hi bpm. Interval berikutnya setelah 1 easy + 1 tidur cukup.';
+    todayType = PlanType.easy; todayTitle = 'Recovery Spin: 40 mnt Z1–Z2';
+    todayDetail = 'Pemanasan 10 mnt Z1. Inti: 25 mnt Z2 (HR $z2lo–$z2hi bpm), kadens 85–95 rpm. Pendinginan 5 mnt. Total ±${easyDistKm.toStringAsFixed(0)} km.';
   } else if (tsb < -10) {
     recovery = RecoveryStatus.waspada;
     reason = 'TSB ${tsb.toStringAsFixed(0)}: fase adaptasi pasca-beban. Stimulus ringan justru mempercepat superkompensasi.';
-    todayType = PlanType.easy; todayTitle = 'Recovery ${easyDistKm.toStringAsFixed(0)} km Z1–Z2';
-    todayDetail = '35–45 mnt santai. HR $z2lo–$z2hi bpm, cadence 85–95 rpm. Berhenti jika HR melayang >10 bpm di pace biasa.';
+    todayType = PlanType.easy; todayTitle = 'Recovery Spin: 40 mnt Z1–Z2';
+    todayDetail = 'Pemanasan 10 mnt Z1. Inti: 25 mnt Z2 (HR $z2lo–$z2hi bpm), kadens 85–95 rpm. Pendinginan 5 mnt. Total ±${easyDistKm.toStringAsFixed(0)} km. Berhenti jika HR melayang >10 bpm.';
   } else if (quality7 == 0) {
     recovery = RecoveryStatus.siap;
     reason = 'TSB ${tsb.toStringAsFixed(0)} (${freshnessLabel.toLowerCase()}). Tidak ada sesi quality 7 hari terakhir — saatnya stimulus VO2max.';
-    todayType = PlanType.interval; todayTitle = 'Interval 4×4 mnt @ ${(maxHr * 0.9).round()}–$z4hi bpm';
-    todayDetail = 'Pemanasan 15 mnt Z2. 4× (4 mnt keras 90–95% HRmax + 3 mnt easy). Pendinginan 10 mnt. Total ±50 mnt (±${intervalTotalKm.toStringAsFixed(0)} km).';
+    todayType = PlanType.interval; todayTitle = 'VO2max Intervals: 4×4 mnt @ ${(maxHr * 0.9).round()}–$z4hi bpm';
+    todayDetail = 'Pemanasan 15 mnt Z2. Inti: 4× (4 mnt Z5 90–95% HRmax + 3 mnt Z1 recovery). Pendinginan 10 mnt Z1. Total ±50 mnt (±${intervalTotalKm.toStringAsFixed(0)} km).';
   } else if (!long7) {
     recovery = RecoveryStatus.siap;
     reason = 'TSB ${tsb.toStringAsFixed(0)} (${freshnessLabel.toLowerCase()}). Basis aerobik kurang: belum ada long ride minggu ini.';
-    todayType = PlanType.long; todayTitle = 'Long Ride ${longTargetKm.toStringAsFixed(0)} km @ $z2lo–$z2hi bpm';
-    todayDetail = 'Z2 sepanjang jalan, pace ngobrol. Karbo 30–60 g/jam setelah jam pertama.';
+    todayType = PlanType.long; todayTitle = 'Long Ride Z2: ${longTargetKm.toStringAsFixed(0)} km @ $z2lo–$z2hi bpm';
+    todayDetail = 'Pemanasan 10 mnt Z1. Inti: Z2 kontinu (pace ngobrol, HR $z2lo–$z2hi bpm). Pendinginan 10 mnt Z1. Karbo 30–60 g/jam setelah jam pertama.';
   } else {
     recovery = RecoveryStatus.siap;
     reason = 'TSB ${tsb.toStringAsFixed(0)} (${freshnessLabel.toLowerCase()}). Struktur minggu seimbang — kunci dengan tempo.';
-    todayType = PlanType.tempo; todayTitle = 'Tempo 25 mnt @ $z3lo–$z3hi bpm';
-    todayDetail = '20 mnt Z2 + 25 mnt Z3 + 10 mnt cooldown. Pacing datar, cadence stabil 90 rpm.';
+    todayType = PlanType.tempo; todayTitle = 'Sweet-Spot Tempo: 2×12 mnt @ $z3lo–$z3hi bpm';
+    todayDetail = 'Pemanasan 15 mnt Z2. Inti: 2× (12 mnt Z3 @ $z3lo–$z3hi bpm + 5 mnt Z2 recovery). Pendinginan 10 mnt Z1. Total ±55 mnt. Pacing datar, kadens 90 rpm.';
   }
 
   if (event != null) {
@@ -621,6 +636,45 @@ CoachAnalysis analyzeCoach(List<CyclingActivity> activities, int maxHr, [EventGo
     }
   }
 
+  // ---------- Narasi Coach AI (format UI baku) ----------
+  final tsbText = tsb.toStringAsFixed(0);
+  final tssText = tss.toStringAsFixed(0);
+  String sessionNote;
+  switch (todayType) {
+    case PlanType.rest:
+      sessionNote =
+          'TSB $tsbText menandakan akumulasi kelelahan melampaui kapasitas adaptasi; hari ini dialokasikan untuk regenerasi sistem saraf dan pengisian glikogen.';
+      break;
+    case PlanType.event:
+      sessionNote =
+          'TSB $tsbText dan CTL ${ctl.toStringAsFixed(0)} sudah terkunci melalui taper; fokus hari ini adalah eksekusi pacing, bukan penambahan beban.';
+      break;
+    case PlanType.taper:
+      sessionNote =
+          'TSB $tsbText menunjukkan kesegaran yang terjaga; volume dikurangi agar supercompensation memuncak tepat pada hari event.';
+      break;
+    case PlanType.interval:
+      sessionNote =
+          'TSB $tsbText (${freshnessLabel.toLowerCase()}) menandakan fase supercompensation; sistem aerobik siap menyerap stimulus VO2max tanpa defisit pemulihan.';
+      break;
+    case PlanType.long:
+      sessionNote =
+          'TSB $tsbText menopang durasi panjang hari ini; kapasitas aerobik dan efisiensi oksidasi lemak menjadi prioritas mikrocycle.';
+      break;
+    case PlanType.tempo:
+      sessionNote =
+          'TSB $tsbText menunjukkan keseimbangan beban-adaptasi; sweet-spot mempertajam muscular endurance tanpa menambah kelelahan berlebih.';
+      break;
+    case PlanType.easy:
+      sessionNote =
+          'TSB $tsbText menunjukkan kelelahan terkontrol; volume Z1–Z2 mempertahankan aliran darah dan oksidasi lemak tanpa membebani sistem saraf pusat.';
+      break;
+  }
+  final whyThisSession =
+      '$reason Model TSS: TSB ${tsbTss.toStringAsFixed(0)} (ATL ${atlTss.toStringAsFixed(0)} vs CTL ${ctlTss.toStringAsFixed(0)}) memperkuat dasar keputusan ini.';
+  final weekStructure =
+      'Analisis: $weekMix (${last7Km.toStringAsFixed(0)} km, TSS $tssText) dalam 7 hari terakhir. Plan: $weekPlan';
+
   return CoachAnalysis(
     totalKm: totalKm, totalRides: activities.length, avgSpeedKmh: avgSpeedKmh,
     avgHr: avgHr, hrCoverage: hrCoverage, totalElevationM: totalElev,
@@ -642,6 +696,9 @@ CoachAnalysis analyzeCoach(List<CyclingActivity> activities, int maxHr, [EventGo
     tsbTss: tsbTss,
     advancedMetricCoverage: advancedMetricCoverage,
     confidenceScore: confidenceScore,
+    sessionNote: sessionNote,
+    whyThisSession: whyThisSession,
+    weekStructure: weekStructure,
   );
 }
 
@@ -679,6 +736,17 @@ CoachAnalysis analyzeCoach(List<CyclingActivity> activities, int maxHr, [EventGo
 }
 
 // ---------- Session eval ----------
+/// TSS satu sesi terhadap proxy FTP dari kumpulan sesi (tanpa power meter).
+double tssOfActivity(CyclingActivity a, List<CyclingActivity> pool) {
+  final longRides = pool.where((x) => durationMinOf(x) > 20);
+  if (longRides.isEmpty) return 0;
+  final ftp = longRides.map((x) => x.averageSpeed).reduce(math.max) * 0.95;
+  final d = durationMinOf(a);
+  if (d <= 0 || ftp <= 0 || a.averageSpeed <= 0) return 0;
+  final ifv = a.averageSpeed / ftp;
+  return (d / 60.0) * 100 * ifv * ifv;
+}
+
 SessionEvaluation evaluateSession(CyclingActivity session, List<CyclingActivity> others, int maxHr, double tsb) {
   final strengths = <String>[], gaps = <String>[];
   final distKm = session.distance / 1000.0;
@@ -687,34 +755,54 @@ SessionEvaluation evaluateSession(CyclingActivity session, List<CyclingActivity>
   final hr = session.averageHeartRate;
   final zone = hrZoneName(hr, maxHr);
   final trimp = trimpOf(session, maxHr);
+  final tssSession = tssOfActivity(session, others.isNotEmpty ? others : [session]);
 
   final avgSpeed = others.isEmpty ? speedKmh : others.map((a) => a.speedKmh).reduce((a, b) => a + b) / others.length;
   final longest = others.map((a) => a.distance / 1000.0).fold<double>(0, math.max);
   final avgTrimp = others.isEmpty ? trimp : others.map((a) => trimpOf(a, maxHr)).reduce((a, b) => a + b) / others.length;
   final avgElev = others.isEmpty ? 0.0 : others.map((a) => a.totalElevationGain).reduce((a, b) => a + b) / others.length;
 
-  if (others.isNotEmpty && distKm > longest && longest > 0) strengths.add('Rekor jarak baru: ${distKm.toStringAsFixed(1)} km (sebelumnya ${longest.toStringAsFixed(1)} km).');
+  // Kekuatan: insight fisiologis diprioritaskan di atas rekor angka.
+  if (zone == 'Z2' && durMin >= 45 && session.totalElevationGain >= 100) {
+    strengths.add('Respons HR stabil di Z2 selama ${durMin.toInt()} mnt pada tanjakan ${session.totalElevationGain.toInt()} m — efisiensi kardiovaskular meningkat.');
+  }
+  if (zone == 'Z4' && durMin >= 20 && durMin <= 70) strengths.add('Eksekusi threshold tepat: ${durMin.toInt()} mnt di Z4 tanpa drift HR berlebih — kapasitas lactate clearance terlatih.');
+  if (zone == 'Z3' && durMin >= 25) strengths.add('Tempo ${durMin.toInt()} mnt di Z3 melatih ketahanan pace event pada ambang aerobik-anaerobik.');
+  if ((zone == 'Z1' || zone == 'Z2') && tsb < -10) strengths.add('Disiplin recovery: tetap easy saat TSB ${tsb.toStringAsFixed(0)} — adaptasi diserap tanpa menambah defisit saraf pusat.');
+  if (session.totalElevationGain >= avgElev * 1.5 && session.totalElevationGain >= 100) strengths.add('Tanjakan ${session.totalElevationGain.toInt()} m — kekuatan menanjak dan rekrutmen serat otot terlatih.');
   if (others.isNotEmpty && avgSpeed > 1 && (speedKmh - avgSpeed) / avgSpeed * 100 >= 5) strengths.add('Kecepatan ${((speedKmh - avgSpeed) / avgSpeed * 100).toStringAsFixed(0)}% di atas rata-rata (${avgSpeed.toStringAsFixed(1)} km/jam).');
-  if (zone == 'Z4' && durMin >= 20 && durMin <= 70) strengths.add('Eksekusi threshold tepat: ${durMin.toInt()} mnt di Z4.');
-  if (zone == 'Z3' && durMin >= 25) strengths.add('Tempo ${durMin.toInt()} mnt di Z3 melatih ketahanan pace event.');
-  if ((zone == 'Z1' || zone == 'Z2') && tsb < -10) strengths.add('Disiplin recovery: tetap easy saat tubuh lelah (TSB ${tsb.toStringAsFixed(0)}).');
-  if (session.totalElevationGain >= avgElev * 1.5 && session.totalElevationGain >= 100) strengths.add('Tanjakan ${session.totalElevationGain.toInt()} m — kekuatan menanjak terlatih.');
+  if (others.isNotEmpty && distKm > longest && longest > 0) strengths.add('Rekor jarak baru: ${distKm.toStringAsFixed(1)} km (sebelumnya ${longest.toStringAsFixed(1)} km).');
   if (distKm >= 40) strengths.add('Volume besar (${distKm.toStringAsFixed(0)} km) — pastikan recovery 48 jam.');
-  if (strengths.isEmpty && hr > 0) strengths.add('Sesi terekam lengkap dengan HR — data ini mempertajam analisis berikutnya.');
+  if (strengths.isEmpty && hr > 0) strengths.add('HR terekam penuh (${hr.toInt()} bpm rata-rata) — data ini mempertajam analisis TRIMP/TSS berikutnya.');
+  if (strengths.isEmpty) strengths.add('Konsistensi terjaga: sesi tercatat dan menjadi baseline data berikutnya.');
 
-  if (hr <= 0) gaps.add('Tanpa data HR: zona dan TRIMP hanya estimasi. Pakai HR monitor.');
-  if (zone == 'Z5' && durMin > 40) gaps.add('${durMin.toInt()} mnt di Z5 terlalu lama. Batasi ≤40 mnt per sesi.');
-  if (distKm < 5) gaps.add('Sesi sangat pendek (${distKm.toStringAsFixed(1)} km). Minimal 12 km agar stimulus bermakna.');
-  if ((zone == 'Z1' || (hr <= 0 && speedKmh < avgSpeed * 0.9)) && tsb > 5 && others.length >= 3) gaps.add('Terlalu santai padahal tubuh segar (TSB +${tsb.toStringAsFixed(0)}). Selipkan tempo 10–15 mnt.');
+  // Perhatian: evaluasi kritis / langkah fisiologis berikutnya.
+  if (hr <= 0) gaps.add('Tanpa data HR: zona dan TRIMP hanya estimasi. Pakai HR monitor agar dosis latihan terukur.');
+  if (zone == 'Z5' && durMin > 40) gaps.add('${durMin.toInt()} mnt di Z5 terlalu lama. Batasi ≤40 mnt per sesi agar sistem saraf pusat tidak terakumulasi lelah.');
   if (trimp > avgTrimp * 2.5 && others.length >= 3 && avgTrimp > 0) gaps.add('Beban sesi (${trimp.toStringAsFixed(0)} TRIMP) 2,5× di atas rata-rata. Naikkan maksimal 10%/minggu.');
+  if ((zone == 'Z1' || (hr <= 0 && speedKmh < avgSpeed * 0.9)) && tsb > 5 && others.length >= 3) gaps.add('Terlalu santai padahal tubuh segar (TSB +${tsb.toStringAsFixed(0)}). Selipkan tempo 10–15 mnt.');
+  if (distKm < 5) gaps.add('Sesi sangat pendek (${distKm.toStringAsFixed(1)} km). Minimal 12 km agar stimulus bermakna.');
+  if (tssSession >= 80 && !gaps.any((g) => g.contains('glikogen'))) {
+    gaps.add('TSS sesi ${tssSession.toStringAsFixed(0)} menguras glikogen; prioritaskan 1,0–1,2 g/kgBB karbohidrat dalam jendela pemulihan 2 jam ke depan.');
+  }
+  if (gaps.isEmpty) {
+    gaps.add(tssSession >= 60
+        ? 'TSS sesi ${tssSession.toStringAsFixed(0)} cukup membebani; jaga hidrasi 500–750 ml/jam dan pantau RPE pagi berikutnya.'
+        : 'Tidak ada deviasi signifikan; pertahankan hidrasi dan pantau RPE pagi berikutnya sebelum menaikkan beban.');
+  }
 
   final tone = gaps.any((g) => g.contains('Z5 terlalu lama') || g.contains('2,5×'))
       ? SessionTone.warn
       : (strengths.length >= 2 || (zone == 'Z4' && durMin >= 20 && durMin <= 70) ? SessionTone.good : SessionTone.neutral);
+  // Kesimpulan utama: maksimal 3 kata, berbasis fisiologi sesi.
   final verdict = switch (tone) {
-    SessionTone.good => 'Sesi Berkualitas',
-    SessionTone.warn => 'Perlu Perhatian',
-    SessionTone.neutral => (zone == 'Z1' || zone == 'Z2') ? 'Recovery Tepat' : 'Sesi Selesai',
+    SessionTone.good => switch (zone) {
+      'Z4' || 'Z5' => 'Adaptasi Intensitas Sukses',
+      'Z3' => 'Ketahanan Tempo Terlatih',
+      _ => 'Efisiensi Aerobik Meningkat',
+    },
+    SessionTone.warn => 'Fokus Pemulihan',
+    SessionTone.neutral => distKm >= 40 ? 'Volume Besar Terselesaikan' : 'Target Intensitas Tercapai',
   };
   final focusNext = (zone == 'Z4' || zone == 'Z5' || trimp > 100)
       ? 'Berikutnya: Easy 30–40 mnt Z1–Z2 atau rest total.'

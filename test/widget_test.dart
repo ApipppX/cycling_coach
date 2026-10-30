@@ -254,4 +254,39 @@ void main() {
     // Cakupan metrik lanjutan valid 0..1.
     expect(a.advancedMetricCoverage, inInclusiveRange(0.0, 1.0));
   });
+
+  test('narasi Coach AI format baku (Scenario A)', () {
+    final acts = [
+      CyclingActivity(name: 'R1', distance: 30000, totalElevationGain: 120, averageSpeed: 23 / 3.6, startDate: ymd(2), averageHeartRate: 138),
+      CyclingActivity(name: 'R2', distance: 25000, totalElevationGain: 80, averageSpeed: 22 / 3.6, startDate: ymd(4), averageHeartRate: 132),
+      CyclingActivity(name: 'R3', distance: 40000, totalElevationGain: 200, averageSpeed: 24 / 3.6, startDate: ymd(6), averageHeartRate: 142),
+    ];
+    final a = analyzeCoach(acts, 185);
+    expect(a.sessionNote, isNotEmpty);
+    expect(a.sessionNote, contains('TSB'));
+    expect(a.whyThisSession, contains('Model TSS'));
+    expect(a.weekStructure, contains('Analisis:'));
+    expect(a.weekStructure, contains('Plan:'));
+    // Judul sesi terstruktur: mengandung menit/km dan/atau bpm.
+    expect(a.todayTitle, anyOf(contains('mnt'), contains('km'), contains('Rest'), contains('Deload')));
+    expect(a.todayDetail, anyOf(contains('Pemanasan'), contains('Tanpa sepeda'), contains('Libur')));
+  });
+
+  test('evaluasi sesi format baku (Scenario B)', () {
+    final session = CyclingActivity(
+      name: 'Threshold', distance: 40000, totalElevationGain: 150,
+      averageSpeed: 30 / 3.6, startDate: ymd(0), averageHeartRate: 168,
+      durationSec: 4800,
+    );
+    final others = [
+      CyclingActivity(name: 'R1', distance: 30000, totalElevationGain: 100, averageSpeed: 25 / 3.6, startDate: ymd(2), averageHeartRate: 140, durationSec: 4300),
+      CyclingActivity(name: 'R2', distance: 35000, totalElevationGain: 120, averageSpeed: 26 / 3.6, startDate: ymd(4), averageHeartRate: 145, durationSec: 4800),
+    ];
+    final ev = evaluateSession(session, others, 185, -6);
+    // Kesimpulan utama maksimal 3 kata.
+    expect(ev.verdict.trim().split(RegExp(r'\s+')).length, lessThanOrEqualTo(3));
+    // Selalu ada minimal 1 kekuatan dan 1 perhatian.
+    expect(ev.strengths, isNotEmpty);
+    expect(ev.gaps, isNotEmpty);
+  });
 }
