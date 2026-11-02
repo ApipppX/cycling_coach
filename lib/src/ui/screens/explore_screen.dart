@@ -742,7 +742,7 @@ class _ExploreState extends ConsumerState<ExploreScreen> {
                     MarkerLayer(markers: markers),
                     const RichAttributionWidget(attributions: [
                       TextSourceAttribution(
-                          '© OpenStreetMap contributors')
+                          '© OpenStreetMap contributors · Powered by Esri')
                     ]),
                   ],
                 ),
