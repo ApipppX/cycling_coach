@@ -5,7 +5,12 @@ class GpsPoint {
   final double lng;
   final double ele;
   final int t;
-  const GpsPoint({required this.lat, required this.lng, this.ele = 0, required this.t});
+  const GpsPoint({
+    required this.lat,
+    required this.lng,
+    this.ele = 0,
+    required this.t,
+  });
 
   Map<String, Object?> toJson() => {'lat': lat, 'lng': lng, 'ele': ele, 't': t};
 
@@ -33,11 +38,14 @@ class CyclingActivity {
   final String startDate; // ISO yyyy-MM-ddTHH:mm:ssZ
   final double averageHeartRate; // bpm, 0 = no data
   final String note;
+
   /// Rute GPS tersimpan sebagai JSON ringkas: [[lat,lng,ele,t], ...].
   /// '' = sesi manual / impor CSV tanpa rute.
   final String routeJson;
+
   /// Durasi real hasil rekaman GPS (detik). 0 = hitung dari jarak/kecepatan.
   final double durationSec;
+
   /// Penanda ringan "sesi punya rute GPS".
   ///
   /// Query daftar (riwayat) sengaja TIDAK memuat [routeJson] agar memori
@@ -61,10 +69,13 @@ class CyclingActivity {
 
   double get distanceKm => distance / 1000.0;
   double get speedKmh => averageSpeed * 3.6;
-  String get dateKey => startDate.length >= 10 ? startDate.substring(0, 10) : startDate;
+  String get dateKey =>
+      startDate.length >= 10 ? startDate.substring(0, 10) : startDate;
+
   /// Durasi GPS diutamakan bila ada; fallback ke jarak/kecepatan (sesi manual).
-  double get durationMin =>
-      durationSec > 0 ? durationSec / 60.0 : (averageSpeed > 0 ? distance / averageSpeed / 60.0 : 0);
+  double get durationMin => durationSec > 0
+      ? durationSec / 60.0
+      : (averageSpeed > 0 ? distance / averageSpeed / 60.0 : 0);
   bool get hasRoute => hasRouteData || routeJson.isNotEmpty;
 
   CyclingActivity copyWith({
@@ -104,6 +115,10 @@ class EventGoal {
   final double targetElevationM;
   final int createdAt;
 
+  /// Rute resmi panitia dari file GPX (JSON ringkas [[lat,lng,ele,t], ...]).
+  /// '' = event belum punya rute GPX.
+  final String routeJson;
+
   const EventGoal({
     this.id = 0,
     required this.name,
@@ -111,9 +126,33 @@ class EventGoal {
     required this.targetDistanceKm,
     this.targetElevationM = 0,
     required this.createdAt,
+    this.routeJson = '',
   });
+
+  bool get hasRoute => routeJson.isNotEmpty;
+
+  EventGoal copyWith({
+    int? id,
+    String? name,
+    String? eventDate,
+    double? targetDistanceKm,
+    double? targetElevationM,
+    int? createdAt,
+    String? routeJson,
+  }) {
+    return EventGoal(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      eventDate: eventDate ?? this.eventDate,
+      targetDistanceKm: targetDistanceKm ?? this.targetDistanceKm,
+      targetElevationM: targetElevationM ?? this.targetElevationM,
+      createdAt: createdAt ?? this.createdAt,
+      routeJson: routeJson ?? this.routeJson,
+    );
+  }
 }
 
 double msToKmh(double ms) => ms * 3.6;
 double kmhToMs(double kmh) => kmh / 3.6;
-String formatDateShort(String iso) => iso.length >= 10 ? iso.substring(0, 10) : iso;
+String formatDateShort(String iso) =>
+    iso.length >= 10 ? iso.substring(0, 10) : iso;

@@ -35,7 +35,7 @@ auto-pause, rute tersimpan per sesi, ekspor GPX, analisis beban sport-science
 - **Jelajah** (pengganti GMaps, tanpa API key): kolom **Dari** (default
   **Posisi saya**) + **Ke**, tukar ⇅, tap peta + reverse-geocode nama jalan,
   rute sepeda OSRM bicycle + fallback FOSSGIS, **Mulai** (navigasi in-app:
-  follow + sisa jarak/ETA + auto-sampai), **Rekam**, **GPX**, **Ulangi**,
+  follow + sisa jarak/ETA + auto-sampai), **Rekam**, **Import GPX**, **Ulangi**,
   **GMaps** eksternal. Lihat §C2.
 - **CyclingCoach Pro** (nol-rupiah via kode donasi di paywall): PDF bersih
   tanpa footer promo, gaya peta Gelap untuk gowes malam (Rekam + Jelajah),
@@ -49,8 +49,9 @@ auto-pause, rute tersimpan per sesi, ekspor GPX, analisis beban sport-science
   **Perhatian** berbasis fisiologi — termasuk saran glikogen pasca-sesi (TSS).
 - **Statistik**: lifetime totals, grafik 8 minggu / 6 bulan / 3 tahun, tren,
   distribusi zona HR, rekor & streak.
-- **Event**: **Kesiapan: %**, **Progres plan**, **Jadwal latihan**, tombol
-  **Kalkulator ETA Anti-COT** + Timer live.
+- **Event**: **Kesiapan: %**, **Progres plan**, **Jadwal latihan**, **rute
+  GPX panitia** (impor `.gpx` → preview peta → buka langsung di Jelajah),
+  tombol **Kalkulator ETA Anti-COT** + Timer live.
 - **Profil**: nama/umur/berat/target, MaxHR, tema, **CyclingCoach Pro**,
   backup/restore JSON (termasuk rute GPS), bagikan app, hapus data.
 
@@ -128,12 +129,16 @@ Tab **Jelajah** = GMaps mini khusus sepeda, semua gratis tanpa key
    otomatis digambar + jarak & estimasi waktu. Server primer OSRM,
    fallback FOSSGIS bila primer down.
 4. **Mulai** = navigasi DI DALAM app (peta mengikuti posisimu, banner sisa
-   jarak + ETA live, berhenti otomatis saat sampai <40 m, tombol **Berhenti**
-   untuk batal). Tak perlu GMaps.
+   jarak + ETA live, berhenti otomatis saat sampai <50 m di bagian akhir
+   rute — aman untuk rute loop start/finish sama, tombol **Berhenti** untuk
+   batal). Tak perlu GMaps.
 5. **Rekam** = buka layar Rekam GPS (catat gowes sambil ikuti rute).
-6. **GPX** = bagikan rute rencana (impor ke Strava/Garmin/head unit).
+6. **Import GPX** = impor file `.gpx` (langsung jadi rute + endpoint
+   navigasi), atau bagikan rute rencana ke Strava/Garmin/head unit. File cukup
+   dipilih dari WhatsApp/Downloads — tanpa koneksi ke server.
 7. **Ulangi** = hitung ulang rute; **GMaps** = buka rute di Google Maps
-   (opsi eksternal bila butuh turn-by-turn suara).
+   (opsi eksternal bila butuh turn-by-turn suara). Untuk rute GPX impor,
+   tombol berubah menjadi **Lihat** (kembali ke tampilan seluruh rute).
 
 ### D. Backup / restore — kapan pakai apa
 
@@ -147,8 +152,11 @@ Tab **Jelajah** = GMaps mini khusus sepeda, semua gratis tanpa key
 ### E. Event & Anti-COT — alur hari-H
 
 Tab **Event** → isi nama + tanggal + target km → lihat **Kesiapan: %** +
-**Progres plan** + **Jadwal latihan (N hari)** (centang progres) → hari-H buka
-tombol **Kalkulator ETA Anti-COT** (atau langsung tab kalkulator):
+**Progres plan** + **Jadwal latihan (N hari)** (centang progres). Di kartu
+**Rute GPX panitia**, tekan **Impor GPX dari panitia** → pilih file `.gpx`
+(jarak/elevasi event otomatis menyesuaikan) → **Buka di Jelajah** → **Mulai**
+untuk navigasi mengikuti rute resmi. Hari-H buka tombol **Kalkulator ETA
+Anti-COT** (atau langsung tab kalkulator):
 
 - Pilih preset sekali ketuk (**Fun 50K**, **Audax 100K/200K/300K/400K/600K**
   + COT brevet standar) atau isi target, COT, jam start manual.
@@ -210,12 +218,13 @@ HP mati/dibunuh → loadTrackBackup() → restoreInterrupted() (paused) → Lanj
   `average_speed (m/s), start_date (ISO), average_heart_rate, note,`
   **`route_json` (TEXT `[[lat,lng,ele,t],…]`, `''` = manual),**
   **`duration_sec` (REAL, `0` = hitung dari jarak/kecepatan)**.
-- `event_goals`: `id, name, event_date, target_distance_km, target_elevation_m, created_at`
-  (satu event aktif: `saveSingleEvent` menimpa).
+- `event_goals`: `id, name, event_date, target_distance_km, target_elevation_m, created_at,`
+  **`route_json` (rute resmi GPX panitia, `''` = belum ada)** (satu event aktif:
+  `saveSingleEvent` menimpa).
 - `plan_checks`: `date (PK yyyy-MM-dd)` — checklist manual plan event.
 - Migrasi: v3→v4 `note`, v4→v5 drop `rpe`, **v5→v6 tambah `route_json` +
-  `duration_sec` (try/catch agar upgrade parsial aman)**. Regenerasi:
-  `dart run build_runner build`.
+  `duration_sec`**, **v6→v7 tambah `route_json` di `event_goals`** (try/catch
+  agar upgrade parsial aman). Regenerasi: `dart run build_runner build`.
 - Web (Chrome/Edge): SQLite berjalan via WASM — `web/sqlite3.wasm` +
   `web/drift_worker.js` **wajib ada** (diambil dari release drift yang sama
   dengan `pubspec.lock`: drift 2.35.1; `DriftWebOptions` di `app_database.dart`).
@@ -227,7 +236,7 @@ HP mati/dibunuh → loadTrackBackup() → restoreInterrupted() (paused) → Lanj
 main.dart                    → init SharedPrefs + Drift, inject via Riverpod overrides.
 models/models.dart           → POJO CyclingActivity (+routeJson/durationSec/hasRoute),
                                GpsPoint (lat/lng/ele/t), EventGoal, msToKmh helpers.
-data/app_database.dart       → Drift schema v6 + migrasi + CRUD/watch/restoreAll.
+data/app_database.dart       → Drift schema v7 + migrasi + CRUD/watch/restoreAll.
                                (app_database.g.dart = GENERATED, jangan edit manual.)
 data/prefs.dart              → PrefsState + PrefsNotifier (target/MaxHR/profil/berat/tema).
 core/geo_utils.dart          → Matematika GPS murni: haversine, filterRawPoints
@@ -290,8 +299,12 @@ ui/screens/explore_screen.dart → Jelajah ala GMaps TANPA key: kolom Dari+Ke
                                + reverse-geocode), rute sepeda OSRM bicycle
                                + fallback FOSSGIS, **navigasi in-app**
                                (follow + sisa jarak/ETA + auto-sampai),
-                               GPX rencana (shareGpx), Rekam rute ini,
-                               GMaps eksternal. Tile OSM key-free.
+                               Import GPX (pickGpxFile → parse → navigasi),
+                               bagikan GPX rencana (shareGpx),
+                               Rekam rute ini, GMaps eksternal. Tile OSM key-free.
+core/gpx.dart                → parser GPX 1.1 tanpa dependency XML: trkpt/rtept/wpt,
+                               deteksi nama, namespace, self-closing, validasi
+                               koordinat, batas 20 MB / 100.000 titik.
 core/places_api.dart           → searchPlaces (Nominatim, UA wajib), fetchBikeRoute
                                (OSRM primer + fallback FOSSGIS, profil bicycle),
                                reverseGeocode (label jalan, fallback koordinat).
@@ -311,7 +324,8 @@ ui/screens/coach_screen.dart → Format Coach AI: Sesi Berikutnya, Catatan Sesi,
                                Kenapa Sesi Ini?, Struktur Minggu + badge TSS/NP/IF/VI
                                + kondisi tubuh + warning + PDF.
 ui/screens/stats_screen.dart → Total + 3 grafik + tren + zona + rekor + streak.
-ui/screens/event_screen.dart → Goal + readiness + plan + progres + ETA Anti-COT.
+ui/screens/event_screen.dart → Goal + readiness + plan + progres + ETA Anti-COT
+                               + impor/preview rute GPX panitia → Jelajah.
 ui/screens/eta_predictor_screen.dart → Kalkulator COT: preset Audax sekali ketuk,
                                mode **OTOMATIS (GPS live)** / **MANUAL**,
                                **HITUNG OTOMATIS AKTIF** / HITUNG PREDIKSI,
@@ -410,7 +424,7 @@ gerak; iOS Simulator → Features → Location → City Run.
 
 ## Skema versi & kompatibilitas
 
-- DB `schemaVersion = 6`. Downgrade tidak didukung (fresh install bila perlu).
+- DB `schemaVersion = 7`. Downgrade tidak didukung (fresh install bila perlu).
 - Backup JSON `version: 1` (field rute opsional → backup lama tetap restore).
 - CSV tidak membawa rute (by design — CSV = ringkasan; rute via GPX/JSON).
 - Atribusi peta: **© OpenStreetMap contributors · Powered by Esri**

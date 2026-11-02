@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
+
 import '../models/models.dart' as m;
 
 part 'app_database.g.dart';
@@ -27,6 +28,8 @@ class EventGoals extends Table {
   RealColumn get targetDistanceKm => real()();
   RealColumn get targetElevationM => real().withDefault(const Constant(0))();
   IntColumn get createdAt => integer()();
+  // v7: rute resmi GPX dari panitia event (JSON ringkas).
+  TextColumn get routeJson => text().withDefault(const Constant(''))();
 }
 
 @DataClassName('PlanCheckRow')
@@ -43,57 +46,63 @@ class AppDatabase extends _$AppDatabase {
   // pubspec.lock). Tanpa ini web crash: "the `web` parameter needs to be
   // set". Di Android/iOS/desktop param `web` diabaikan (pakai file native).
   AppDatabase()
-      : super(driftDatabase(
+    : super(
+        driftDatabase(
           name: 'cycling_coach_database',
           web: DriftWebOptions(
             sqlite3Wasm: Uri.parse('sqlite3.wasm'),
             driftWorker: Uri.parse('drift_worker.js'),
           ),
-        ));
+        ),
+      );
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
-        onCreate: (m) async => m.createAll(),
-        onUpgrade: (m, from, to) async {
-          // v3 ke bawah belum punya kolom note.
-          if (from < 4) {
-            try {
-              await m.addColumn(
-                  cyclingActivities, cyclingActivities.note);
-            } catch (_) {
-              // Kolom sudah ada (upgrade parsial) — aman diabaikan.
-            }
-          }
-          // v4 sempat punya kolom rpe — hapus, tidak dipakai lagi.
-          // Dibungkus try agar upgrade loncat (v3->v5) tidak gagal
-          // saat kolom rpe memang tidak pernah ada.
-          if (from <= 4) {
-            try {
-              await m.dropColumn(cyclingActivities, 'rpe');
-            } catch (_) {
-              // Kolom tidak ada — bukan error.
-            }
-          }
-          // v6: rute GPS + durasi real. addColumn dibungkus try agar
-          // upgrade parsial / reinstall tidak crash.
-          if (from < 6) {
-            try {
-              await m.addColumn(
-                  cyclingActivities, cyclingActivities.routeJson);
-            } catch (_) {}
-            try {
-              await m.addColumn(
-                  cyclingActivities, cyclingActivities.durationSec);
-            } catch (_) {}
-          }
-        },
-      );
+    onCreate: (m) async => m.createAll(),
+    onUpgrade: (m, from, to) async {
+      // v3 ke bawah belum punya kolom note.
+      if (from < 4) {
+        try {
+          await m.addColumn(cyclingActivities, cyclingActivities.note);
+        } catch (_) {
+          // Kolom sudah ada (upgrade parsial) — aman diabaikan.
+        }
+      }
+      // v4 sempat punya kolom rpe — hapus, tidak dipakai lagi.
+      // Dibungkus try agar upgrade loncat (v3->v5) tidak gagal
+      // saat kolom rpe memang tidak pernah ada.
+      if (from <= 4) {
+        try {
+          await m.dropColumn(cyclingActivities, 'rpe');
+        } catch (_) {
+          // Kolom tidak ada — bukan error.
+        }
+      }
+      // v6: rute GPS + durasi real. addColumn dibungkus try agar
+      // upgrade parsial / reinstall tidak crash.
+      if (from < 6) {
+        try {
+          await m.addColumn(cyclingActivities, cyclingActivities.routeJson);
+        } catch (_) {}
+        try {
+          await m.addColumn(cyclingActivities, cyclingActivities.durationSec);
+        } catch (_) {}
+      }
+      // v7: rute GPX panitia pada event.
+      if (from < 7) {
+        try {
+          await m.addColumn(eventGoals, eventGoals.routeJson);
+        } catch (_) {}
+      }
+    },
+  );
 
   Stream<List<m.CyclingActivity>> watchActivities() {
-    return (select(cyclingActivities)..orderBy([(t) => OrderingTerm.desc(t.id)]))
+    return (select(cyclingActivities)
+          ..orderBy([(t) => OrderingTerm.desc(t.id)]))
         .watch()
         .map((rows) => rows.map(_toActivity).toList());
   }
@@ -112,54 +121,53 @@ class AppDatabase extends _$AppDatabase {
       'THEN 1 ELSE 0 END AS has_route '
       'FROM cycling_activities ORDER BY id DESC',
       readsFrom: {cyclingActivities},
-    ).watch().map(
-        (rows) => rows.map(_liteFromRow).toList(growable: false));
+    ).watch().map((rows) => rows.map(_liteFromRow).toList(growable: false));
   }
 
   /// Ambil SATU sesi lengkap termasuk `route_json` (untuk detail/edit).
   /// Null bila sesi sudah dihapus.
   Future<m.CyclingActivity?> getActivityById(int id) async {
-    final row = await (select(cyclingActivities)
-          ..where((t) => t.id.equals(id)))
-        .getSingleOrNull();
+    final row = await (select(
+      cyclingActivities,
+    )..where((t) => t.id.equals(id))).getSingleOrNull();
     return row == null ? null : _toActivity(row);
   }
 
   Future<List<m.CyclingActivity>> getActivities() async {
-    final rows = await (select(cyclingActivities)
-          ..orderBy([(t) => OrderingTerm.desc(t.id)]))
-        .get();
+    final rows = await (select(
+      cyclingActivities,
+    )..orderBy([(t) => OrderingTerm.desc(t.id)])).get();
     return rows.map(_toActivity).toList();
   }
 
   m.CyclingActivity _toActivity(ActivityRow r) => m.CyclingActivity(
-        id: r.id,
-        name: r.name,
-        distance: r.distance,
-        totalElevationGain: r.totalElevationGain,
-        averageSpeed: r.averageSpeed,
-        startDate: r.startDate,
-        averageHeartRate: r.averageHeartRate,
-        note: r.note,
-        routeJson: r.routeJson,
-        durationSec: r.durationSec,
-        hasRouteData: r.routeJson.isNotEmpty,
-      );
+    id: r.id,
+    name: r.name,
+    distance: r.distance,
+    totalElevationGain: r.totalElevationGain,
+    averageSpeed: r.averageSpeed,
+    startDate: r.startDate,
+    averageHeartRate: r.averageHeartRate,
+    note: r.note,
+    routeJson: r.routeJson,
+    durationSec: r.durationSec,
+    hasRouteData: r.routeJson.isNotEmpty,
+  );
 
   /// Mapping baris ringan (hasil [watchActivitiesLite]) → model.
   /// Null-coalescing dipakai agar DB lama/parsial tidak pernah melempar.
   m.CyclingActivity _liteFromRow(QueryRow r) => m.CyclingActivity(
-        id: r.read<int?>('id') ?? 0,
-        name: r.read<String?>('name') ?? '',
-        distance: r.read<double?>('distance') ?? 0,
-        totalElevationGain: r.read<double?>('total_elevation_gain') ?? 0,
-        averageSpeed: r.read<double?>('average_speed') ?? 0,
-        startDate: r.read<String?>('start_date') ?? '',
-        averageHeartRate: r.read<double?>('average_heart_rate') ?? 0,
-        note: r.read<String?>('note') ?? '',
-        durationSec: r.read<double?>('duration_sec') ?? 0,
-        hasRouteData: (r.read<int?>('has_route') ?? 0) != 0,
-      );
+    id: r.read<int?>('id') ?? 0,
+    name: r.read<String?>('name') ?? '',
+    distance: r.read<double?>('distance') ?? 0,
+    totalElevationGain: r.read<double?>('total_elevation_gain') ?? 0,
+    averageSpeed: r.read<double?>('average_speed') ?? 0,
+    startDate: r.read<String?>('start_date') ?? '',
+    averageHeartRate: r.read<double?>('average_heart_rate') ?? 0,
+    note: r.read<String?>('note') ?? '',
+    durationSec: r.read<double?>('duration_sec') ?? 0,
+    hasRouteData: (r.read<int?>('has_route') ?? 0) != 0,
+  );
 
   Future<int> upsertActivity(m.CyclingActivity a) {
     final c = CyclingActivitiesCompanion(
@@ -183,59 +191,79 @@ class AppDatabase extends _$AppDatabase {
   Future<void> clearActivities() => delete(cyclingActivities).go();
 
   Stream<List<m.EventGoal>> watchEvents() {
-    return (select(eventGoals)..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
-        .watch()
-        .map((rows) => rows
-            .map((r) => m.EventGoal(
-                id: r.id, name: r.name, eventDate: r.eventDate,
-                targetDistanceKm: r.targetDistanceKm,
-                targetElevationM: r.targetElevationM, createdAt: r.createdAt))
-            .toList());
+    return (select(
+      eventGoals,
+    )..orderBy([(t) => OrderingTerm.desc(t.createdAt)])).watch().map(
+      (rows) => rows
+          .map(
+            (r) => m.EventGoal(
+              id: r.id,
+              name: r.name,
+              eventDate: r.eventDate,
+              targetDistanceKm: r.targetDistanceKm,
+              targetElevationM: r.targetElevationM,
+              createdAt: r.createdAt,
+              routeJson: r.routeJson,
+            ),
+          )
+          .toList(),
+    );
   }
 
   Future<List<m.EventGoal>> getEvents() async {
-    final rows = await (select(eventGoals)
-          ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
-        .get();
+    final rows = await (select(
+      eventGoals,
+    )..orderBy([(t) => OrderingTerm.desc(t.createdAt)])).get();
     return rows
-        .map((r) => m.EventGoal(
+        .map(
+          (r) => m.EventGoal(
             id: r.id,
             name: r.name,
             eventDate: r.eventDate,
             targetDistanceKm: r.targetDistanceKm,
             targetElevationM: r.targetElevationM,
-            createdAt: r.createdAt))
+            createdAt: r.createdAt,
+            routeJson: r.routeJson,
+          ),
+        )
         .toList();
   }
 
   /// Restore penuh dari backup: timpa semua data dalam satu transaksi.
   Future<void> restoreAll(
-      List<m.CyclingActivity> activities, List<m.EventGoal> events) async {
+    List<m.CyclingActivity> activities,
+    List<m.EventGoal> events,
+  ) async {
     await transaction(() async {
       await delete(cyclingActivities).go();
       await delete(eventGoals).go();
       await delete(planChecks).go();
       for (final a in activities) {
-        await into(cyclingActivities).insert(CyclingActivitiesCompanion(
-          name: Value(a.name),
-          distance: Value(a.distance),
-          totalElevationGain: Value(a.totalElevationGain),
-          averageSpeed: Value(a.averageSpeed),
-          startDate: Value(a.startDate),
-          averageHeartRate: Value(a.averageHeartRate),
-          note: Value(a.note),
-          routeJson: Value(a.routeJson),
-          durationSec: Value(a.durationSec),
-        ));
+        await into(cyclingActivities).insert(
+          CyclingActivitiesCompanion(
+            name: Value(a.name),
+            distance: Value(a.distance),
+            totalElevationGain: Value(a.totalElevationGain),
+            averageSpeed: Value(a.averageSpeed),
+            startDate: Value(a.startDate),
+            averageHeartRate: Value(a.averageHeartRate),
+            note: Value(a.note),
+            routeJson: Value(a.routeJson),
+            durationSec: Value(a.durationSec),
+          ),
+        );
       }
       for (final e in events) {
-        await into(eventGoals).insert(EventGoalsCompanion(
-          name: Value(e.name),
-          eventDate: Value(e.eventDate),
-          targetDistanceKm: Value(e.targetDistanceKm),
-          targetElevationM: Value(e.targetElevationM),
-          createdAt: Value(e.createdAt),
-        ));
+        await into(eventGoals).insert(
+          EventGoalsCompanion(
+            name: Value(e.name),
+            eventDate: Value(e.eventDate),
+            targetDistanceKm: Value(e.targetDistanceKm),
+            targetElevationM: Value(e.targetElevationM),
+            createdAt: Value(e.createdAt),
+            routeJson: Value(e.routeJson),
+          ),
+        );
       }
     });
   }
@@ -243,12 +271,45 @@ class AppDatabase extends _$AppDatabase {
   Future<void> saveSingleEvent(m.EventGoal e) async {
     await delete(eventGoals).go();
     await delete(planChecks).go();
-    await into(eventGoals).insert(EventGoalsCompanion(
-      name: Value(e.name), eventDate: Value(e.eventDate),
-      targetDistanceKm: Value(e.targetDistanceKm),
-      targetElevationM: Value(e.targetElevationM),
-      createdAt: Value(DateTime.now().millisecondsSinceEpoch),
-    ));
+    await into(eventGoals).insert(
+      EventGoalsCompanion(
+        name: Value(e.name),
+        eventDate: Value(e.eventDate),
+        targetDistanceKm: Value(e.targetDistanceKm),
+        targetElevationM: Value(e.targetElevationM),
+        createdAt: Value(DateTime.now().millisecondsSinceEpoch),
+        routeJson: Value(e.routeJson),
+      ),
+    );
+  }
+
+  /// Simpan rute GPX panitia untuk event aktif.
+  /// Target jarak/elevasi ikut diperbarui bila [targetDistanceKm] /
+  /// [targetElevationM] dikirim — panitia biasanya sudah menetapkan angka
+  /// resmi di file GPX.
+  Future<void> saveEventRoute(
+    int eventId,
+    String routeJson, {
+    double? targetDistanceKm,
+    double? targetElevationM,
+  }) async {
+    await (update(eventGoals)..where((t) => t.id.equals(eventId))).write(
+      EventGoalsCompanion(
+        routeJson: Value(routeJson),
+        targetDistanceKm: targetDistanceKm == null
+            ? const Value.absent()
+            : Value(targetDistanceKm),
+        targetElevationM: targetElevationM == null
+            ? const Value.absent()
+            : Value(targetElevationM),
+      ),
+    );
+  }
+
+  Future<void> clearEventRoute(int eventId) async {
+    await (update(eventGoals)..where((t) => t.id.equals(eventId))).write(
+      const EventGoalsCompanion(routeJson: Value('')),
+    );
   }
 
   Future<void> deleteEvent(m.EventGoal e) async {
@@ -261,7 +322,8 @@ class AppDatabase extends _$AppDatabase {
 
   Future<void> togglePlanDay(String date, bool done) async {
     if (done) {
-      await into(planChecks).insertOnConflictUpdate(PlanChecksCompanion(date: Value(date)));
+      await into(planChecks)
+          .insertOnConflictUpdate(PlanChecksCompanion(date: Value(date)));
     } else {
       await (delete(planChecks)..where((t) => t.date.equals(date))).go();
     }
