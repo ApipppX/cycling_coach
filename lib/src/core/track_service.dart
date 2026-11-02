@@ -104,7 +104,12 @@ Future<void> clearTrackBackup() async {
   } catch (_) {}
 }
 
-/// Inisialisasi sekali di main() (khusus mobile; aman dipanggil di mana saja).
+Future<void>? _configureFuture;
+
+/// Konfigurasi plugin foreground service (khusus mobile).
+///
+/// Tidak dipanggil saat cold start agar app langsung tampil; gunakan
+/// [ensureTrackService] sebelum start/ping.
 Future<void> initializeTrackService() async {
   final service = FlutterBackgroundService();
   await service.configure(
@@ -125,6 +130,22 @@ Future<void> initializeTrackService() async {
       onBackground: onIosBackground,
     ),
   );
+}
+
+/// Pastikan konfigurasi service siap sebelum dipakai (lazy, sekali saja).
+/// Bila percobaan gagal, future dibuang agar panggilan berikutnya mencoba
+/// lagi — bukan menyimpan error selamanya.
+Future<void> ensureTrackService() async {
+  final running = _configureFuture;
+  if (running != null) return running;
+  final future = initializeTrackService();
+  _configureFuture = future;
+  try {
+    await future;
+  } catch (_) {
+    _configureFuture = null;
+    rethrow;
+  }
 }
 
 @pragma('vm:entry-point')
@@ -190,6 +211,11 @@ class _BgEngine {
   double _lastSpeedMs = 0;
   int _notifCount = 0;
   int _lastPersistMs = 0;
+  // Jarak & gain dihitung inkremental per titik baru (O(1) per fix).
+  // Dulu snapshot() mengulang seluruh rute tiap detik → O(n²) dan ANR
+  // pada ride panjang.
+  double _distM = 0;
+  double _gainM = 0;
   // Gate kualitas GPS — instance SAMA aturannya dengan jalur legacy.
   final TrackFilter _filter = TrackFilter();
 
@@ -219,6 +245,8 @@ class _BgEngine {
     _curLng = null;
     _notifCount = 0;
     _lastPersistMs = 0;
+    _distM = 0;
+    _gainM = 0;
     _filter.reset();
     // Sesi baru = backup lama tak berlaku lagi.
     unawaited(clearTrackBackup());
@@ -273,6 +301,12 @@ class _BgEngine {
     );
     var appended = false;
     if (seed != null) {
+      if (_pts.isNotEmpty) {
+        final prev = _pts.last;
+        _distM += haversineM(prev.lat, prev.lng, seed.lat, seed.lng);
+        final dEle = seed.ele - prev.ele;
+        if (dEle >= elevationGainStepM) _gainM += dEle;
+      }
       _pts.add(seed);
       appended = true;
     }
@@ -372,8 +406,8 @@ class _BgEngine {
       'newPts': [
         for (final p in newPts) [p.lat, p.lng, p.ele, p.t],
       ],
-      'distM': routeDistanceM(_pts),
-      'gainM': routeElevationGain(_pts),
+      'distM': _distM,
+      'gainM': _gainM,
       'elapsed': elapsed,
       'moving': _autoPaused ? _frozenMovingSec : elapsed,
       'nPts': _pts.length,

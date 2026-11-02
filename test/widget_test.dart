@@ -265,8 +265,8 @@ void main() {
     expect(a.sessionNote, isNotEmpty);
     expect(a.sessionNote, contains('TSB'));
     expect(a.whyThisSession, contains('Model TSS'));
-    expect(a.weekStructure, contains('Analisis:'));
-    expect(a.weekStructure, contains('Plan:'));
+    expect(a.weekStructure, contains('Ringkas 7 hari:'));
+    expect(a.weekStructure, contains('Rencana:'));
     // Judul sesi terstruktur: mengandung menit/km dan/atau bpm.
     expect(a.todayTitle, anyOf(contains('mnt'), contains('km'), contains('Rest'), contains('Deload')));
     expect(a.todayDetail, anyOf(contains('Pemanasan'), contains('Tanpa sepeda'), contains('Libur')));

@@ -72,6 +72,16 @@ TileLayer osmTiles({bool dark = false}) {
   );
 }
 
+/// Sampel merata maksimal [maxPoints] untuk digambar (endpoint tetap).
+/// Mencegah PolylineLayer memproses belasan ribu titik pada ride panjang.
+List<LatLng> _downsampleRoute(List<LatLng> pts, [int maxPoints = 1200]) {
+  if (pts.length <= maxPoints) return pts;
+  final step = (pts.length - 1) / (maxPoints - 1);
+  return List<LatLng>.generate(
+      maxPoints, (i) => pts[(i * step).round()],
+      growable: false);
+}
+
 LatLngBounds? boundsOf(List<LatLng> pts) {
   if (pts.isEmpty) return null;
   var minLat = pts.first.latitude,
@@ -110,8 +120,9 @@ class RouteMap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final pts =
+    final allPts =
         decodeRoute(routeJson).map((p) => LatLng(p.lat, p.lng)).toList();
+    final pts = _downsampleRoute(allPts);
     final scheme = Theme.of(context).colorScheme;
     if (pts.isEmpty) {
       return Container(
@@ -135,7 +146,7 @@ class RouteMap extends StatelessWidget {
         ]),
       );
     }
-    final bounds = boundsOf(pts)!;
+    final bounds = boundsOf(allPts)!;
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: SizedBox(
@@ -229,6 +240,7 @@ class LiveTrackMap extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final trail = points.map((p) => LatLng(p.lat, p.lng)).toList();
+    final drawnTrail = _downsampleRoute(trail);
     final center = currentLat != null && currentLng != null
         ? LatLng(currentLat!, currentLng!)
         : (trail.isNotEmpty
@@ -244,11 +256,13 @@ class LiveTrackMap extends StatelessWidget {
       ),
       children: [
         osmTiles(dark: dark),
-        if (trail.length >= 2)
+        if (drawnTrail.length >= 2)
           PolylineLayer(
             polylines: [
               Polyline(
-                  points: trail, strokeWidth: 5, color: scheme.primary),
+                  points: drawnTrail,
+                  strokeWidth: 5,
+                  color: scheme.primary),
             ],
           ),
         if (currentLat != null && currentLng != null)

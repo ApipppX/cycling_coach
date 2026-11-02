@@ -38,6 +38,12 @@ class CyclingActivity {
   final String routeJson;
   /// Durasi real hasil rekaman GPS (detik). 0 = hitung dari jarak/kecepatan.
   final double durationSec;
+  /// Penanda ringan "sesi punya rute GPS".
+  ///
+  /// Query daftar (riwayat) sengaja TIDAK memuat [routeJson] agar memori
+  /// tetap kecil walau riwayat panjang; nilai ini diisi dari SQL. Untuk
+  /// objek yang dimuat penuh, nilainya sama dengan `routeJson.isNotEmpty`.
+  final bool hasRouteData;
 
   const CyclingActivity({
     this.id = 0,
@@ -50,6 +56,7 @@ class CyclingActivity {
     this.note = '',
     this.routeJson = '',
     this.durationSec = 0,
+    this.hasRouteData = false,
   });
 
   double get distanceKm => distance / 1000.0;
@@ -58,7 +65,7 @@ class CyclingActivity {
   /// Durasi GPS diutamakan bila ada; fallback ke jarak/kecepatan (sesi manual).
   double get durationMin =>
       durationSec > 0 ? durationSec / 60.0 : (averageSpeed > 0 ? distance / averageSpeed / 60.0 : 0);
-  bool get hasRoute => routeJson.isNotEmpty;
+  bool get hasRoute => hasRouteData || routeJson.isNotEmpty;
 
   CyclingActivity copyWith({
     int? id,
@@ -71,6 +78,7 @@ class CyclingActivity {
     String? note,
     String? routeJson,
     double? durationSec,
+    bool? hasRouteData,
   }) {
     return CyclingActivity(
       id: id ?? this.id,
@@ -83,6 +91,7 @@ class CyclingActivity {
       note: note ?? this.note,
       routeJson: routeJson ?? this.routeJson,
       durationSec: durationSec ?? this.durationSec,
+      hasRouteData: hasRouteData ?? this.hasRouteData,
     );
   }
 }

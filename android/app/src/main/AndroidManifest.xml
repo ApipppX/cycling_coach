@@ -62,10 +62,10 @@
         <service
             android:name="id.flutter.flutter_background_service.BackgroundService"
             android:enabled="true"
-            android:exported="true"
+            android:exported="false"
             android:stopWithTask="false"
             android:foregroundServiceType="location"
-            tools:replace="android:foregroundServiceType" />
+            tools:replace="android:foregroundServiceType,android:exported" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

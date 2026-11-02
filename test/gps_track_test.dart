@@ -131,7 +131,8 @@ void main() {
     expect(splits.map((s) => s.index).toList(), [1, 2, 3]);
   });
 
-  test('CyclingActivity GPS: durationMin pakai durationSec', () {    const a = CyclingActivity(
+  test('CyclingActivity GPS: durationMin pakai durationSec', () {
+    const a = CyclingActivity(
       name: 'GPS',
       distance: 10000,
       totalElevationGain: 50,
@@ -151,6 +152,17 @@ void main() {
     );
     expect(manual.durationMin, closeTo(33.33, 0.1));
     expect(manual.hasRoute, isFalse);
+    // Baris ringan (tanpa route_json) tetap tahu sesi punya rute GPS.
+    const lite = CyclingActivity(
+      name: 'GPS ringan',
+      distance: 10000,
+      totalElevationGain: 50,
+      averageSpeed: 5,
+      startDate: '2026-10-01T07:00:00Z',
+      hasRouteData: true,
+    );
+    expect(lite.routeJson, isEmpty);
+    expect(lite.hasRoute, isTrue);
   });
 
   test('moving time + avg abaikan diam', () {

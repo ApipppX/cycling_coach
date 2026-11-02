@@ -98,6 +98,33 @@ class AppDatabase extends _$AppDatabase {
         .map((rows) => rows.map(_toActivity).toList());
   }
 
+  /// Query ringan untuk daftar/riwayat: TIDAK memuat `route_json`.
+  ///
+  /// Satu sesi GPS bisa menyimpan ribuan titik (ratusan KB teks). Memuat
+  /// semuanya ke memori untuk setiap layar membuat HP dengan riwayat panjang
+  /// berisiko OOM/force close. Layar detail & edit memakai
+  /// [getActivityById] untuk mengambil rute lengkap satu sesi saja.
+  Stream<List<m.CyclingActivity>> watchActivitiesLite() {
+    return customSelect(
+      'SELECT id, name, distance, total_elevation_gain, average_speed, '
+      'start_date, average_heart_rate, note, duration_sec, '
+      'CASE WHEN route_json IS NOT NULL AND length(route_json) > 0 '
+      'THEN 1 ELSE 0 END AS has_route '
+      'FROM cycling_activities ORDER BY id DESC',
+      readsFrom: {cyclingActivities},
+    ).watch().map(
+        (rows) => rows.map(_liteFromRow).toList(growable: false));
+  }
+
+  /// Ambil SATU sesi lengkap termasuk `route_json` (untuk detail/edit).
+  /// Null bila sesi sudah dihapus.
+  Future<m.CyclingActivity?> getActivityById(int id) async {
+    final row = await (select(cyclingActivities)
+          ..where((t) => t.id.equals(id)))
+        .getSingleOrNull();
+    return row == null ? null : _toActivity(row);
+  }
+
   Future<List<m.CyclingActivity>> getActivities() async {
     final rows = await (select(cyclingActivities)
           ..orderBy([(t) => OrderingTerm.desc(t.id)]))
@@ -116,6 +143,22 @@ class AppDatabase extends _$AppDatabase {
         note: r.note,
         routeJson: r.routeJson,
         durationSec: r.durationSec,
+        hasRouteData: r.routeJson.isNotEmpty,
+      );
+
+  /// Mapping baris ringan (hasil [watchActivitiesLite]) → model.
+  /// Null-coalescing dipakai agar DB lama/parsial tidak pernah melempar.
+  m.CyclingActivity _liteFromRow(QueryRow r) => m.CyclingActivity(
+        id: r.read<int?>('id') ?? 0,
+        name: r.read<String?>('name') ?? '',
+        distance: r.read<double?>('distance') ?? 0,
+        totalElevationGain: r.read<double?>('total_elevation_gain') ?? 0,
+        averageSpeed: r.read<double?>('average_speed') ?? 0,
+        startDate: r.read<String?>('start_date') ?? '',
+        averageHeartRate: r.read<double?>('average_heart_rate') ?? 0,
+        note: r.read<String?>('note') ?? '',
+        durationSec: r.read<double?>('duration_sec') ?? 0,
+        hasRouteData: (r.read<int?>('has_route') ?? 0) != 0,
       );
 
   Future<int> upsertActivity(m.CyclingActivity a) {

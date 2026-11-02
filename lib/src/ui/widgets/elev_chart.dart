@@ -5,6 +5,17 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/geo_utils.dart';
 import '../theme/app_theme.dart';
 
+/// Ambil sampel merata maksimal [maxPoints] (endpoint tetap dipertahankan).
+/// fl_chart menggambar semua titik; ride 3 jam bisa >10.000 sampel.
+List<ElevSample> _downsampleSamples(List<ElevSample> samples,
+    [int maxPoints = 400]) {
+  if (samples.length <= maxPoints) return samples;
+  final step = (samples.length - 1) / (maxPoints - 1);
+  return List<ElevSample>.generate(
+      maxPoints, (i) => samples[(i * step).round()],
+      growable: false);
+}
+
 /// Grafik profil elevasi ala Strava: garis + area, sumbu X jarak (km),
 /// label min/max. Mengembalikan placeholder bila tak ada data elevasi
 /// (mis. rekaman browser yang altitudenya 0 semua).
@@ -37,6 +48,7 @@ class ElevProfileChart extends StatelessWidget {
         ]),
       );
     }
+    final display = _downsampleSamples(samples);
     final eles = samples.map((s) => s.eleM).toList();
     var minE = eles.reduce((a, b) => a < b ? a : b);
     var maxE = eles.reduce((a, b) => a > b ? a : b);
@@ -138,8 +150,7 @@ class ElevProfileChart extends StatelessWidget {
                     lineBarsData: [
                       LineChartBarData(
                         spots: [
-                          for (final s in samples)
-                            FlSpot(s.distKm, s.eleM),
+                          for (final s in display) FlSpot(s.distKm, s.eleM),
                         ],
                         isCurved: true,
                         preventCurveOverShooting: true,
