@@ -9,6 +9,7 @@ import '../../core/geo_utils.dart';
 import '../../core/premium.dart';
 import '../../core/track_recorder.dart';
 import '../../data/prefs.dart';
+import '../../models/planned_route.dart';
 import '../../providers/providers.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common.dart';
@@ -27,17 +28,10 @@ String _fmtClock(int sec) {
 /// Alur: Start → locating → recording (peta mengikuti) → pause/resume →
 /// Finish → dialog simpan (nama/HR/catatan) → tersimpan ke Drift + evaluasi.
 class TrackScreen extends ConsumerStatefulWidget {
-  /// Jalur GPX / rute OSRM yang diikuti saat merekam. Kosong = rekam biasa.
-  final List<LatLng> plannedRoute;
-  final String routeName;
-  final double plannedDistanceM;
+  /// Rute rencana yang diikuti saat merekam. Null = rekam biasa.
+  final PlannedRoute? plannedRoute;
 
-  const TrackScreen({
-    super.key,
-    this.plannedRoute = const [],
-    this.routeName = '',
-    this.plannedDistanceM = 0,
-  });
+  const TrackScreen({super.key, this.plannedRoute});
 
   @override
   ConsumerState<TrackScreen> createState() => _TrackState();
@@ -49,35 +43,9 @@ class _TrackState extends ConsumerState<TrackScreen> {
   bool _darkMap = false;
   LatLng? _lastCentered;
 
-  /// Jarak rute rencana. Bila pemanggil tidak mengirim jarak, hitung dari
-  /// titik-titiknya supaya header tetap informatif.
-  late final double _plannedKm;
+  PlannedRoute? get _planned => widget.plannedRoute;
 
-  bool get _hasPlannedRoute => widget.plannedRoute.length >= 2;
-
-  String get _plannedTitle {
-    final name = widget.routeName.trim();
-    return name.isEmpty ? 'Rute GPX' : name;
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.plannedDistanceM > 0) {
-      _plannedKm = widget.plannedDistanceM / 1000.0;
-    } else {
-      var meters = 0.0;
-      for (var i = 1; i < widget.plannedRoute.length; i++) {
-        meters += haversineM(
-          widget.plannedRoute[i - 1].latitude,
-          widget.plannedRoute[i - 1].longitude,
-          widget.plannedRoute[i].latitude,
-          widget.plannedRoute[i].longitude,
-        );
-      }
-      _plannedKm = meters / 1000.0;
-    }
-  }
+  bool get _hasPlannedRoute => _planned?.hasRoute ?? false;
 
   @override
   void dispose() {
@@ -140,37 +108,7 @@ class _TrackState extends ConsumerState<TrackScreen> {
       body: Column(children: [
         // Header rute yang diikuti. Tanpa ini layar Rekam terlihat seperti
         // rekaman kosong meski user baru memilih GPX di Jelajah.
-        if (_hasPlannedRoute)
-          Container(
-            width: double.infinity,
-            padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            color: Theme.of(context)
-                .colorScheme
-                .tertiaryContainer
-                .withValues(alpha: 0.6),
-            child: Row(children: [
-              Icon(
-                Icons.route_rounded,
-                size: 18,
-                color: Theme.of(context).colorScheme.onTertiaryContainer,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Rute: $_plannedTitle'
-                  '${_plannedKm > 0 ? ' • ${_plannedKm.toStringAsFixed(1)} km' : ''}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color:
-                            Theme.of(context).colorScheme.onTertiaryContainer,
-                      ),
-                ),
-              ),
-            ]),
-          ),
+        if (_hasPlannedRoute) _PlannedRouteBanner(route: _planned!),
         // Banner akurasi / status. Bila error TAPI ada titik (service
         // dibunuh OS), tawarkan Simpan — data tidak hilang.
         if (t.status == TrackStatus.error)
@@ -218,7 +156,7 @@ class _TrackState extends ConsumerState<TrackScreen> {
           child: Stack(children: [
             LiveTrackMap(
               points: t.points,
-              plannedRoute: widget.plannedRoute,
+              plannedRoute: _planned?.points ?? const [],
               currentLat: t.currentLat,
               currentLng: t.currentLng,
               controller: _map,
@@ -418,8 +356,8 @@ class _TrackState extends ConsumerState<TrackScreen> {
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Text(
-                'Rute sudah tampil di peta — rekaman GPS dimulai setelah '
-                'menekan tombol di bawah.',
+                'Rute terpasang dan tampil putus-putus di peta. GPS baru '
+                'mulai merekam setelah kamu menekan Mulai Rekam Rute.',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
@@ -581,6 +519,93 @@ class _TrackState extends ConsumerState<TrackScreen> {
     } else {
       rec.discard();
     }
+  }
+}
+
+/// Banner ringkas rute rencana di atas peta Rekam: nama, sumber, jarak,
+/// elevasi, estimasi waktu, dan jumlah titik (khusus GPX).
+class _PlannedRouteBanner extends StatelessWidget {
+  final PlannedRoute route;
+  const _PlannedRouteBanner({required this.route});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final showPointCount =
+        route.source != PlannedRouteSource.osrm && route.sourcePointCount > 0;
+    final meta = [
+      route.summaryLine,
+      if (showPointCount) '${route.sourcePointCount} titik',
+    ].join(' • ');
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      color: scheme.tertiaryContainer.withValues(alpha: 0.6),
+      child: Row(children: [
+        Icon(Icons.route_rounded,
+            size: 20, color: scheme.onTertiaryContainer),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                Flexible(
+                  child: Text(
+                    route.displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: scheme.onTertiaryContainer,
+                        ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _RouteSourceBadge(label: route.source.label),
+              ]),
+              const SizedBox(height: 2),
+              Text(
+                meta,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onTertiaryContainer.withValues(alpha: 0.85),
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+class _RouteSourceBadge extends StatelessWidget {
+  final String label;
+  const _RouteSourceBadge({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: scheme.tertiary.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: scheme.tertiary.withValues(alpha: 0.35)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.4,
+          color: scheme.onTertiaryContainer,
+        ),
+      ),
+    );
   }
 }
 

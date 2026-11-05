@@ -12,6 +12,7 @@ import '../../core/gpx.dart';
 import '../../core/places_api.dart';
 import '../../core/premium.dart';
 import '../../models/models.dart';
+import '../../models/planned_route.dart';
 import '../widgets/pro_paywall.dart';
 import '../widgets/route_map.dart';
 import 'track_screen.dart' show TrackScreen, shareGpx;
@@ -80,6 +81,15 @@ class _ExploreState extends ConsumerState<ExploreScreen> {
   // --- rute GPX impor ---
   bool _gpxImported = false;
   String _gpxName = '';
+  double _gpxElevationGainM = 0;
+  int _gpxPointCount = 0;
+
+  /// Padding kamera rute yang aman untuk layar pendek.
+  ///
+  /// Padding atas+bawah tidak boleh melebihi tinggi peta: nilai lama
+  /// (140 + 240 px) membuat ruang efektif negatif sehingga CameraFit jatuh
+  /// ke zoom minimum dan rute hanya terlihat sebagai titik.
+  static const _routeFitPadding = EdgeInsets.fromLTRB(28, 32, 28, 32);
 
   // --- navigasi dalam app ---
   bool _navigating = false;
@@ -382,7 +392,7 @@ class _ExploreState extends ConsumerState<ExploreScreen> {
             _map.fitCamera(
               CameraFit.bounds(
                 bounds: b,
-                padding: const EdgeInsets.fromLTRB(48, 140, 48, 240),
+                padding: _routeFitPadding,
                 maxZoom: 16,
               ),
             );
@@ -430,6 +440,8 @@ class _ExploreState extends ConsumerState<ExploreScreen> {
   void _detachGpx() {
     _gpxImported = false;
     _gpxName = '';
+    _gpxElevationGainM = 0;
+    _gpxPointCount = 0;
   }
 
   /// Pasang rute GPX ke peta + endpoint Dari/Tujuan agar bisa dinavigasi.
@@ -450,33 +462,24 @@ class _ExploreState extends ConsumerState<ExploreScreen> {
     }
     _stopNav(silent: true);
     _routeReq++;
-    // Simplifikasi ringan: file GPX bisa puluhan ribu titik, peta HP
-    // tetap mulus tanpa mengubah bentuk rute secara berarti.
-    var pts = simplifyRoute(raw, 2);
-    if (pts.length < 2) pts = raw;
-    final latLngs = [for (final p in pts) LatLng(p.lat, p.lng)];
-    final distanceM = routeDistanceM(raw);
-    var durationSec = 0.0;
-    if (raw.first.t > 0 && raw.last.t > raw.first.t) {
-      durationSec = (raw.last.t - raw.first.t) / 1000.0;
-    }
-    if (durationSec <= 0 && distanceM > 0) {
-      // Tanpa timestamp (umum di GPX rute): asumsi gowes santai 20 km/jam.
-      durationSec = distanceM / (20 / 3.6);
-    }
-    final safeName = name.trim().isEmpty ? 'Rute GPX' : name.trim();
-    final startLabel = 'Start • $safeName';
-    final finishLabel = 'Finish • $safeName';
+    // Satu sumber kebenaran untuk metadata GPX: jarak/elevasi dihitung dari
+    // titik asli, sedangkan titik peta disederhanakan agar tetap mulus.
+    final planned = PlannedRoute.fromGpsPoints(raw, name: name);
+    final latLngs = planned.points;
+    final startLabel = 'Start • ${planned.name}';
+    final finishLabel = 'Finish • ${planned.name}';
 
     setState(() {
       _gpxImported = true;
-      _gpxName = safeName;
+      _gpxName = planned.name;
+      _gpxElevationGainM = planned.elevationGainM;
+      _gpxPointCount = planned.sourcePointCount;
       _routing = false;
       _routeErr = null;
       _route = BikeRoute(
         points: latLngs,
-        distanceM: distanceM,
-        durationSec: durationSec,
+        distanceM: planned.distanceM,
+        durationSec: planned.durationSec,
       );
       _from = latLngs.first;
       _fromLabel = startLabel;
@@ -492,11 +495,15 @@ class _ExploreState extends ConsumerState<ExploreScreen> {
       if (mounted) _fitRoute();
     });
     if (showSnackBar && mounted) {
-      final km = distanceM / 1000.0;
+      final elev = planned.elevationGainM >= 5
+          ? ' • ↑ ${planned.elevationGainM.round()} m'
+          : '';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'GPX "$safeName" dimuat • ${km.toStringAsFixed(1)} km • ${raw.length} titik. Tekan Mulai untuk navigasi.',
+            'GPX "${planned.name}" dimuat • '
+            '${planned.distanceKm.toStringAsFixed(1)} km$elev • '
+            '${raw.length} titik. Tekan Mulai untuk navigasi.',
           ),
         ),
       );
@@ -512,10 +519,7 @@ class _ExploreState extends ConsumerState<ExploreScreen> {
       _map.fitCamera(
         CameraFit.bounds(
           bounds: b,
-          // Padding harus jauh lebih kecil dari tinggi peta. Di layar pendek,
-          // 140+240 px membuat ruang efektif negatif sehingga CameraFit
-          // jatuh ke zoom minimum (3) dan rute hanya terlihat sebagai titik.
-          padding: const EdgeInsets.fromLTRB(28, 32, 28, 32),
+          padding: _routeFitPadding,
           maxZoom: 16,
         ),
       );
@@ -754,21 +758,37 @@ class _ExploreState extends ConsumerState<ExploreScreen> {
     );
   }
 
-  void _recordRoute() {
+  /// Rute yang sedang tampil, siap dibawa ke layar Rekam.
+  ///
+  /// Metadata (nama, jarak, durasi, elevasi, sumber) dibungkus satu objek
+  /// agar layar Rekam tidak perlu mengetahui asal rute secara terpisah.
+  PlannedRoute? get _plannedRoute {
     final r = _route;
+    if (r == null || r.points.length < 2) return null;
+    final name = _gpxImported
+        ? _gpxName
+        : (_toLabel.trim().isEmpty
+            ? 'Rute Jelajah'
+            : _toLabel.split(',').first);
+    return PlannedRoute.fromLatLngs(
+      r.points,
+      name: name,
+      distanceM: r.distanceM,
+      durationSec: r.durationSec,
+      elevationGainM: _gpxImported ? _gpxElevationGainM : 0,
+      sourcePointCount: _gpxImported ? _gpxPointCount : r.points.length,
+      source:
+          _gpxImported ? PlannedRouteSource.gpx : PlannedRouteSource.osrm,
+    );
+  }
+
+  void _recordRoute() {
     // Bawa rute yang sedang tampil (GPX / OSRM) ke layar Rekam. Tanpa ini
     // TrackScreen membuka rekaman kosong dan jalur yang dipilih user hilang.
-    final routeName = _gpxImported
-        ? _gpxName
-        : (_toLabel.isEmpty ? 'Rute Jelajah' : _toLabel.split(',').first);
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => TrackScreen(
-          plannedRoute: r?.points ?? const [],
-          routeName: r == null ? '' : routeName,
-          plannedDistanceM: r?.distanceM ?? 0,
-        ),
+        builder: (_) => TrackScreen(plannedRoute: _plannedRoute),
       ),
     );
   }
@@ -1292,7 +1312,9 @@ class _ExploreState extends ConsumerState<ExploreScreen> {
                       ),
                       Text(
                         _route != null
-                            ? '${_route!.distanceKm.toStringAsFixed(1)} km • ~${_route!.etaLabel} gowes • ${_gpxImported ? 'rute GPX' : 'ramah sepeda'}'
+                            ? '${_route!.distanceKm.toStringAsFixed(1)} km'
+                                '${_gpxImported && _gpxElevationGainM >= 5 ? ' • ↑ ${_gpxElevationGainM.round()} m' : ''}'
+                                ' • ~${_route!.etaLabel} gowes • ${_gpxImported ? 'rute GPX' : 'ramah sepeda'}'
                             : (_routeErr ?? 'Menghitung…'),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,

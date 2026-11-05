@@ -26,6 +26,10 @@ auto-pause, rute tersimpan per sesi, ekspor GPX, analisis beban sport-science
   - Start → Jeda/Lanjut → Selesai → dialog simpan (nama/HR/catatan,
     kalori otomatis) → masuk DB + evaluasi sesi.
   - Rute disederhanakan (Douglas-Peucker ±4 m) agar DB ringan, tetap start/finish akurat.
+  - **Rekam mengikuti rute**: rute GPX/OSRM/event dari Jelajah tampil
+    putus-putus di peta Rekam, lengkap dengan banner nama, jarak, elevasi,
+    ETA, dan sumber rute. GPS **tidak** mulai sendiri — tekan
+    **Mulai Rekam Rute** saat siap. Lihat §C3.
 - **Detail sesi** (semua otomatis dari rute, tanpa input): tile Jarak/Durasi total/
   **Waktu gerak**/Avg/**Avg gerak**/**Max + KM tercepat**/Elevasi naik±turun/**Kalori**,
   banner **⚡ Terkencang KM X**, **grafik profil elevasi** (smoothed, min/max),
@@ -34,9 +38,10 @@ auto-pause, rute tersimpan per sesi, ekspor GPX, analisis beban sport-science
   TRIMP, evaluasi sesi.
 - **Jelajah** (pengganti GMaps, tanpa API key): kolom **Dari** (default
   **Posisi saya**) + **Ke**, tukar ⇅, tap peta + reverse-geocode nama jalan,
-  rute sepeda OSRM bicycle + fallback FOSSGIS, **Mulai** (navigasi in-app:
-  follow + sisa jarak/ETA + auto-sampai), **Rekam**, **Import GPX**, **Ulangi**,
-  **GMaps** eksternal. Lihat §C2.
+  rute sepeda OSRM bicycle + fallback FOSSGIS, metadata jarak/elevasi/ETA,
+  **Mulai** (navigasi in-app:
+  follow + sisa jarak/ETA + auto-sampai), **Rekam** (membawa rute ke layar
+  Rekam), **Import GPX**, **Ulangi**, **GMaps** eksternal. Lihat §C2.
 - **CyclingCoach Pro** (nol-rupiah via kode donasi di paywall): PDF bersih
   tanpa footer promo, gaya peta Gelap untuk gowes malam (Rekam + Jelajah),
   lencana PRO di Profil. Inti app (rekam/coach/statistik) tetap gratis.
@@ -126,19 +131,38 @@ Tab **Jelajah** = GMaps mini khusus sepeda, semua gratis tanpa key
    jalan via reverse-geocode).
 2. Tombol **⇅** menukar Dari–Tujuan; **🧹** membersihkan.
 3. Rute sepeda **ramah gowes** (profil bicycle: hindari tol/motorway)
-   otomatis digambar + jarak & estimasi waktu. Server primer OSRM,
-   fallback FOSSGIS bila primer down.
+   otomatis digambar + metadata jarak, elevasi (bila GPX punya data),
+   dan estimasi waktu. Server primer OSRM, fallback FOSSGIS bila primer
+   down. Kamera otomatis memuat seluruh rute dengan padding aman untuk
+   layar pendek.
 4. **Mulai** = navigasi DI DALAM app (peta mengikuti posisimu, banner sisa
    jarak + ETA live, berhenti otomatis saat sampai <50 m di bagian akhir
    rute — aman untuk rute loop start/finish sama, tombol **Berhenti** untuk
    batal). Tak perlu GMaps.
-5. **Rekam** = buka layar Rekam GPS (catat gowes sambil ikuti rute).
+5. **Rekam** = buka layar Rekam GPS sambil membawa rute yang sedang tampil
+   (GPX/OSRM) sebagai jalur putus-putus. Banner rute menampilkan nama,
+   jarak, elevasi (GPX), ETA, sumber, dan jumlah titik. GPS **tidak**
+   merekam otomatis — tekan **Mulai Rekam Rute** saat siap.
 6. **Import GPX** = impor file `.gpx` (langsung jadi rute + endpoint
    navigasi), atau bagikan rute rencana ke Strava/Garmin/head unit. File cukup
    dipilih dari WhatsApp/Downloads — tanpa koneksi ke server.
 7. **Ulangi** = hitung ulang rute; **GMaps** = buka rute di Google Maps
    (opsi eksternal bila butuh turn-by-turn suara). Untuk rute GPX impor,
    tombol berubah menjadi **Lihat** (kembali ke tampilan seluruh rute).
+
+### C3. Rekam sambil mengikuti rute (GPX / OSRM / event)
+
+1. Pilih rute di **Jelajah** (cari Dari–Tujuan, impor **GPX**, atau buka
+   rute event dari layar Event), lalu tekan **Rekam**.
+2. Layar Rekam menampilkan banner rute: nama, jarak, elevasi (GPX),
+   estimasi waktu, sumber (GPX/OSRM/Event), dan jumlah titik. Jalur
+   rencana digambar **putus-putus** di bawah jejak GPS, dengan pin
+   start/finish dan kamera yang otomatis memuat seluruh rute.
+3. GPS **belum merekam** saat layar dibuka. Tekan **Mulai Rekam Rute**
+   untuk memulai; tombol **Jeda/Selesai** tetap seperti rekaman biasa.
+4. Setelah selesai, sesi tersimpan seperti biasa (peta, split/km, GPX).
+   Rute rencana tidak ikut tersimpan sebagai jejak rekaman — yang
+   tersimpan hanya perjalanan GPS yang benar-benar ditempuh.
 
 ### D. Backup / restore — kapan pakai apa
 
