@@ -512,7 +512,10 @@ class _ExploreState extends ConsumerState<ExploreScreen> {
       _map.fitCamera(
         CameraFit.bounds(
           bounds: b,
-          padding: const EdgeInsets.fromLTRB(48, 140, 48, 240),
+          // Padding harus jauh lebih kecil dari tinggi peta. Di layar pendek,
+          // 140+240 px membuat ruang efektif negatif sehingga CameraFit
+          // jatuh ke zoom minimum (3) dan rute hanya terlihat sebagai titik.
+          padding: const EdgeInsets.fromLTRB(28, 32, 28, 32),
           maxZoom: 16,
         ),
       );
@@ -752,9 +755,21 @@ class _ExploreState extends ConsumerState<ExploreScreen> {
   }
 
   void _recordRoute() {
+    final r = _route;
+    // Bawa rute yang sedang tampil (GPX / OSRM) ke layar Rekam. Tanpa ini
+    // TrackScreen membuka rekaman kosong dan jalur yang dipilih user hilang.
+    final routeName = _gpxImported
+        ? _gpxName
+        : (_toLabel.isEmpty ? 'Rute Jelajah' : _toLabel.split(',').first);
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const TrackScreen()),
+      MaterialPageRoute(
+        builder: (_) => TrackScreen(
+          plannedRoute: r?.points ?? const [],
+          routeName: r == null ? '' : routeName,
+          plannedDistanceM: r?.distanceM ?? 0,
+        ),
+      ),
     );
   }
 

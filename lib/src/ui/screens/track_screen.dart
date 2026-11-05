@@ -27,7 +27,18 @@ String _fmtClock(int sec) {
 /// Alur: Start → locating → recording (peta mengikuti) → pause/resume →
 /// Finish → dialog simpan (nama/HR/catatan) → tersimpan ke Drift + evaluasi.
 class TrackScreen extends ConsumerStatefulWidget {
-  const TrackScreen({super.key});
+  /// Jalur GPX / rute OSRM yang diikuti saat merekam. Kosong = rekam biasa.
+  final List<LatLng> plannedRoute;
+  final String routeName;
+  final double plannedDistanceM;
+
+  const TrackScreen({
+    super.key,
+    this.plannedRoute = const [],
+    this.routeName = '',
+    this.plannedDistanceM = 0,
+  });
+
   @override
   ConsumerState<TrackScreen> createState() => _TrackState();
 }
@@ -37,6 +48,36 @@ class _TrackState extends ConsumerState<TrackScreen> {
   bool _follow = true;
   bool _darkMap = false;
   LatLng? _lastCentered;
+
+  /// Jarak rute rencana. Bila pemanggil tidak mengirim jarak, hitung dari
+  /// titik-titiknya supaya header tetap informatif.
+  late final double _plannedKm;
+
+  bool get _hasPlannedRoute => widget.plannedRoute.length >= 2;
+
+  String get _plannedTitle {
+    final name = widget.routeName.trim();
+    return name.isEmpty ? 'Rute GPX' : name;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.plannedDistanceM > 0) {
+      _plannedKm = widget.plannedDistanceM / 1000.0;
+    } else {
+      var meters = 0.0;
+      for (var i = 1; i < widget.plannedRoute.length; i++) {
+        meters += haversineM(
+          widget.plannedRoute[i - 1].latitude,
+          widget.plannedRoute[i - 1].longitude,
+          widget.plannedRoute[i].latitude,
+          widget.plannedRoute[i].longitude,
+        );
+      }
+      _plannedKm = meters / 1000.0;
+    }
+  }
 
   @override
   void dispose() {
@@ -97,6 +138,39 @@ class _TrackState extends ConsumerState<TrackScreen> {
         ],
       ),
       body: Column(children: [
+        // Header rute yang diikuti. Tanpa ini layar Rekam terlihat seperti
+        // rekaman kosong meski user baru memilih GPX di Jelajah.
+        if (_hasPlannedRoute)
+          Container(
+            width: double.infinity,
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            color: Theme.of(context)
+                .colorScheme
+                .tertiaryContainer
+                .withValues(alpha: 0.6),
+            child: Row(children: [
+              Icon(
+                Icons.route_rounded,
+                size: 18,
+                color: Theme.of(context).colorScheme.onTertiaryContainer,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Rute: $_plannedTitle'
+                  '${_plannedKm > 0 ? ' • ${_plannedKm.toStringAsFixed(1)} km' : ''}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color:
+                            Theme.of(context).colorScheme.onTertiaryContainer,
+                      ),
+                ),
+              ),
+            ]),
+          ),
         // Banner akurasi / status. Bila error TAPI ada titik (service
         // dibunuh OS), tawarkan Simpan — data tidak hilang.
         if (t.status == TrackStatus.error)
@@ -144,6 +218,7 @@ class _TrackState extends ConsumerState<TrackScreen> {
           child: Stack(children: [
             LiveTrackMap(
               points: t.points,
+              plannedRoute: widget.plannedRoute,
               currentLat: t.currentLat,
               currentLng: t.currentLng,
               controller: _map,
@@ -339,11 +414,21 @@ class _TrackState extends ConsumerState<TrackScreen> {
       case TrackStatus.idle:
       case TrackStatus.finished:
         return Column(mainAxisSize: MainAxisSize.min, children: [
+          if (_hasPlannedRoute && t.status == TrackStatus.idle)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                'Rute sudah tampil di peta — rekaman GPS dimulai setelah '
+                'menekan tombol di bawah.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
           AppButton(
             icon: Icons.fiber_manual_record,
             label: t.status == TrackStatus.finished
                 ? 'Rekam Lagi'
-                : 'Mulai Rekam',
+                : (_hasPlannedRoute ? 'Mulai Rekam Rute' : 'Mulai Rekam'),
             onPressed: () async {
               if (t.status == TrackStatus.finished) rec.discard();
               await rec.start();
