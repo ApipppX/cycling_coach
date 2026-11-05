@@ -31,9 +31,14 @@ double routeDistanceM(List<GpsPoint> pts) {
   return sum;
 }
 
+/// Ambang kenaikan elevasi minimum (meter) agar noise GPS/barometer tidak
+/// menggelembung. Dipakai juga oleh perhitungan inkremental di perekam.
+const double elevationGainStepM = 2.0;
+
 /// Gain elevasi total (meter), hanya hitung kenaikan > [minStepM]
 /// agar noise barometer/GPS tidak menggelembung.
-double routeElevationGain(List<GpsPoint> pts, [double minStepM = 2.0]) {
+double routeElevationGain(
+    List<GpsPoint> pts, [double minStepM = elevationGainStepM]) {
   var gain = 0.0;
   for (var i = 1; i < pts.length; i++) {
     final d = pts[i].ele - pts[i - 1].ele;

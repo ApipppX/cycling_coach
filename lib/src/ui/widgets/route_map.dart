@@ -71,6 +71,16 @@ TileLayer osmTiles({bool dark = false}) {
   );
 }
 
+/// Sampel merata maksimal [maxPoints] untuk digambar (endpoint tetap).
+/// Mencegah PolylineLayer memproses belasan ribu titik pada ride panjang.
+List<LatLng> _downsampleRoute(List<LatLng> pts, [int maxPoints = 1200]) {
+  if (pts.length <= maxPoints) return pts;
+  final step = (pts.length - 1) / (maxPoints - 1);
+  return List<LatLng>.generate(
+      maxPoints, (i) => pts[(i * step).round()],
+      growable: false);
+}
+
 LatLngBounds? boundsOf(List<LatLng> pts) {
   if (pts.isEmpty) return null;
   var minLat = pts.first.latitude,
@@ -109,8 +119,9 @@ class RouteMap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final pts =
+    final allPts =
         decodeRoute(routeJson).map((p) => LatLng(p.lat, p.lng)).toList();
+    final pts = _downsampleRoute(allPts);
     final scheme = Theme.of(context).colorScheme;
     if (pts.isEmpty) {
       return Container(
@@ -134,7 +145,7 @@ class RouteMap extends StatelessWidget {
         ]),
       );
     }
-    final bounds = boundsOf(pts)!;
+    final bounds = boundsOf(allPts)!;
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: SizedBox(
@@ -209,8 +220,13 @@ class _Pin extends StatelessWidget {
 }
 
 /// Peta live untuk layar Rekam: ikuti posisi + gambar jejak berjalan.
+///
+/// [plannedRoute] = jalur GPX / rute OSRM yang sedang diikuti. Digambar
+/// putus-putus di bawah jejak rekaman agar user tetap melihat jalur yang
+/// harus dilewati, bukan hanya titik GPS yang sudah dilalui.
 class LiveTrackMap extends StatelessWidget {
   final List<GpsPoint> points;
+  final List<LatLng> plannedRoute;
   final double? currentLat;
   final double? currentLng;
   final MapController controller;
@@ -219,6 +235,7 @@ class LiveTrackMap extends StatelessWidget {
     super.key,
     required this.points,
     required this.controller,
+    this.plannedRoute = const [],
     this.currentLat,
     this.currentLng,
     this.dark = false,
@@ -228,26 +245,81 @@ class LiveTrackMap extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final trail = points.map((p) => LatLng(p.lat, p.lng)).toList();
+    final drawnTrail = _downsampleRoute(trail);
+    final planned = _downsampleRoute(plannedRoute);
     final center = currentLat != null && currentLng != null
         ? LatLng(currentLat!, currentLng!)
         : (trail.isNotEmpty
             ? trail.last
-            : const LatLng(-6.2, 106.8)); // Jakarta fallback
+            : (planned.isNotEmpty
+                ? planned.first
+                : const LatLng(-6.2, 106.8))); // Jakarta fallback
+    // Saat belum ada fix GPS, tampilkan seluruh jalur agar user langsung
+    // melihat rute yang diimpor. Setelah GPS masuk, peta kembali mengikuti
+    // posisi lewat callback di TrackScreen.
+    final initialFit = currentLat == null &&
+            trail.isEmpty &&
+            planned.length >= 2
+        ? CameraFit.bounds(
+            bounds: boundsOf(planned)!,
+            padding: const EdgeInsets.all(24),
+            maxZoom: 16,
+          )
+        : null;
     return FlutterMap(
       mapController: controller,
       options: MapOptions(
         initialCenter: center,
         initialZoom: 16,
+        initialCameraFit: initialFit,
         minZoom: 3,
         maxZoom: 19,
       ),
       children: [
         osmTiles(dark: dark),
-        if (trail.length >= 2)
+        if (planned.length >= 2)
+          PolylineLayer(
+            polylines: [
+              // Halo tipis supaya jalur tetap kebaca di atas tile gelap.
+              Polyline(
+                points: planned,
+                strokeWidth: 8,
+                color: scheme.tertiary.withValues(alpha: 0.18),
+              ),
+              Polyline(
+                points: planned,
+                strokeWidth: 4,
+                color: scheme.tertiary,
+                pattern: StrokePattern.dashed(segments: const [8, 6]),
+              ),
+            ],
+          ),
+        if (planned.length >= 2)
+          MarkerLayer(
+            markers: [
+              Marker(
+                point: planned.first,
+                width: 28,
+                height: 28,
+                child: const _Pin(
+                    color: Colors.green, icon: Icons.play_arrow_rounded),
+              ),
+              Marker(
+                point: planned.last,
+                width: 28,
+                height: 28,
+                child: _Pin(
+                    color: scheme.tertiary, icon: Icons.flag_rounded),
+              ),
+            ],
+          ),
+        if (drawnTrail.length >= 2)
           PolylineLayer(
             polylines: [
               Polyline(
-                  points: trail, strokeWidth: 5, color: scheme.primary),
+                  points: drawnTrail,
+                  strokeWidth: 5,
+                  color: scheme.primary),
             ],
           ),
         if (currentLat != null && currentLng != null)

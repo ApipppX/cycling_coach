@@ -6,7 +6,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../models/models.dart';
 import 'geo_utils.dart';
-import 'track_service.dart' show loadTrackBackup, clearTrackBackup;
+import 'track_service.dart'
+    show loadTrackBackup, clearTrackBackup, ensureTrackService;
 
 /// Status perekaman GPS (mesin state sederhana ala Strava).
 enum TrackStatus { idle, locating, recording, paused, finished, error }
@@ -105,6 +106,9 @@ class TrackRecorder extends Notifier<TrackState> {
   DateTime? _pauseBegan;
   int _lastAutoMovingSec = 0;
   bool _autoPausedNow = false;
+  // Jarak/gain jalur legacy dihitung inkremental (O(1) per fix).
+  double _legacyDistM = 0;
+  double _legacyGainM = 0;
 
   // --- Jalur service latar (Android/iOS) ---
   final FlutterBackgroundService _svc = FlutterBackgroundService();
@@ -130,10 +134,16 @@ class TrackRecorder extends Notifier<TrackState> {
       _bgFullSub = _svc.on('full').listen(_onBgFull);
       _bgPongSub = _svc.on('pong').listen(_onBgPong);
       // Service mungkin masih merekam dari sebelum UI mati (user swipe
-      // app saat layar mati). Tempel ulang bila begitu.
-      try {
-        _svc.invoke('ping');
-      } catch (_) {}
+      // app saat layar mati). Konfigurasi lazily lalu tempel ulang.
+      unawaited(
+        ensureTrackService()
+            .then((_) {
+              try {
+                _svc.invoke('ping');
+              } catch (_) {}
+            })
+            .catchError((_) {}),
+      );
     }
     ref.onDispose(() {
       _bgPosSub?.cancel();
@@ -219,6 +229,8 @@ class TrackRecorder extends Notifier<TrackState> {
     if (pts.length < 2) return false;
     final dist = routeDistanceM(pts);
     final gain = routeElevationGain(pts);
+    _legacyDistM = dist;
+    _legacyGainM = gain;
     final last = pts.last;
     state = TrackState(
       status: TrackStatus.paused,
@@ -262,6 +274,9 @@ class TrackRecorder extends Notifier<TrackState> {
     if (_supportsBg) {
       await _ensureBgPermissions();
       try {
+        // Lazy init: konfigurasi service baru dilakukan saat benar-benar
+        // merekam, bukan saat cold start.
+        await ensureTrackService();
         if (await _svc.startService()) {
           _useBg = true;
           _uiSeq = 0;
@@ -463,6 +478,8 @@ class TrackRecorder extends Notifier<TrackState> {
     _pausedTotalSec = 0;
     _pauseBegan = null;
     _autoPausedNow = false;
+    _legacyDistM = 0;
+    _legacyGainM = 0;
     _filter.reset();
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     state = TrackState(
@@ -529,7 +546,14 @@ class TrackRecorder extends Notifier<TrackState> {
       speedMs: pos.speed,
     );
     if (seed == null) return; // akurasi buruk / diam / jump / duplikat
-    final pts = List<GpsPoint>.of(state.points)..add(seed);
+    final pts = List<GpsPoint>.of(state.points);
+    if (pts.isNotEmpty) {
+      final prev = pts.last;
+      _legacyDistM += haversineM(prev.lat, prev.lng, seed.lat, seed.lng);
+      final dEle = seed.ele - prev.ele;
+      if (dEle >= elevationGainStepM) _legacyGainM += dEle;
+    }
+    pts.add(seed);
 
     // Auto-pause ala Strava: diam >10 dtk → pause otomatis (jarak berhenti).
     if (state.autoPause && pts.length >= 2) {
@@ -543,14 +567,13 @@ class TrackRecorder extends Notifier<TrackState> {
     }
 
     final paused = state.status == TrackStatus.paused || _autoPausedNow;
-    final dist = routeDistanceM(pts);
-    final gain = routeElevationGain(pts);
     final moving = paused ? _lastAutoMovingSec : state.elapsedSec;
-    final avg = state.elapsedSec > 0 ? dist / state.elapsedSec : 0.0;
+    final avg =
+        state.elapsedSec > 0 ? _legacyDistM / state.elapsedSec : 0.0;
     state = state.copyWith(
       points: pts,
-      distanceM: dist,
-      elevationGainM: gain,
+      distanceM: _legacyDistM,
+      elevationGainM: _legacyGainM,
       avgSpeedMs: avg,
       movingSec: moving,
     );
@@ -624,6 +647,8 @@ class TrackRecorder extends Notifier<TrackState> {
     _pausedTotalSec = 0;
     _pauseBegan = null;
     _autoPausedNow = false;
+    _legacyDistM = 0;
+    _legacyGainM = 0;
     _filter.reset();
     _useBg = false;
     _uiSeq = 0;

@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import '../models/models.dart';
 
 /// Backup/restore seluruh data app dalam satu file JSON.
@@ -33,6 +34,8 @@ String exportBackupJson({
           'targetDistanceKm': e.targetDistanceKm,
           'targetElevationM': e.targetElevationM,
           'createdAt': e.createdAt,
+          // Backup lama tanpa routeJson tetap kompatibel (default '').
+          'routeJson': e.routeJson,
         },
     ],
     'prefs': prefs,
@@ -40,8 +43,13 @@ String exportBackupJson({
   return const JsonEncoder.withIndent('  ').convert(map);
 }
 
-({List<CyclingActivity> activities, List<EventGoal> events, Map<String, Object?> prefs, int skipped}) importBackupJson(
-    String text) {
+({
+  List<CyclingActivity> activities,
+  List<EventGoal> events,
+  Map<String, Object?> prefs,
+  int skipped,
+})
+importBackupJson(String text) {
   final activities = <CyclingActivity>[];
   final events = <EventGoal>[];
   final prefs = <String, Object?>{};
@@ -49,8 +57,12 @@ String exportBackupJson({
   final dateRe = RegExp(r'\d{4}-\d{2}-\d{2}');
   try {
     final decoded = json.decode(text);
-    if (decoded is! Map) return (activities: activities, events: events, prefs: prefs, skipped: 1);
-    if (decoded['version'] != 1) return (activities: activities, events: events, prefs: prefs, skipped: 1);
+    if (decoded is! Map) {
+      return (activities: activities, events: events, prefs: prefs, skipped: 1);
+    }
+    if (decoded['version'] != 1) {
+      return (activities: activities, events: events, prefs: prefs, skipped: 1);
+    }
 
     for (final item in (decoded['activities'] as List? ?? [])) {
       try {
@@ -64,23 +76,40 @@ String exportBackupJson({
         final speed = (item['averageSpeed'] as num?)?.toDouble();
         if (name.isEmpty ||
             !dateRe.hasMatch(date) ||
-            dist == null || dist <= 0 || dist > 500000 ||
-            speed == null || speed <= 0 || speed > 60 / 3.6) {
+            dist == null ||
+            dist <= 0 ||
+            dist > 500000 ||
+            speed == null ||
+            speed <= 0 ||
+            speed > 60 / 3.6) {
           skipped++;
           continue;
         }
-        activities.add(CyclingActivity(
-          name: name,
-          distance: dist,
-          totalElevationGain: ((item['totalElevationGain'] as num?)?.toDouble() ?? 0).clamp(0, 10000),
-          averageSpeed: speed,
-          startDate: date,
-          averageHeartRate: ((item['averageHeartRate'] as num?)?.toDouble() ?? 0).clamp(0, 220),
-          note: (item['note'] ?? '').toString(),
-          // Backup lama (v1 tanpa rute) tetap terbaca: default ''/0.
-          routeJson: (item['routeJson'] ?? '').toString(),
-          durationSec: ((item['durationSec'] as num?)?.toDouble() ?? 0).clamp(0, 86400),
-        ));
+        activities.add(
+          CyclingActivity(
+            name: name,
+            distance: dist,
+            totalElevationGain:
+                ((item['totalElevationGain'] as num?)?.toDouble() ?? 0).clamp(
+                  0,
+                  10000,
+                ),
+            averageSpeed: speed,
+            startDate: date,
+            averageHeartRate:
+                ((item['averageHeartRate'] as num?)?.toDouble() ?? 0).clamp(
+                  0,
+                  220,
+                ),
+            note: (item['note'] ?? '').toString(),
+            // Backup lama (v1 tanpa rute) tetap terbaca: default ''/0.
+            routeJson: (item['routeJson'] ?? '').toString(),
+            durationSec: ((item['durationSec'] as num?)?.toDouble() ?? 0).clamp(
+              0,
+              86400,
+            ),
+          ),
+        );
       } catch (_) {
         skipped++;
       }
@@ -94,29 +123,50 @@ String exportBackupJson({
         final name = (item['name'] ?? 'Event').toString();
         final date = (item['eventDate'] ?? '').toString();
         final dist = (item['targetDistanceKm'] as num?)?.toDouble();
-        if (!dateRe.hasMatch(date) || dist == null || dist <= 0 || dist > 1000) {
+        if (!dateRe.hasMatch(date) ||
+            dist == null ||
+            dist <= 0 ||
+            dist > 1000) {
           skipped++;
           continue;
         }
-        events.add(EventGoal(
-          name: name.isEmpty ? 'Event' : name,
-          eventDate: date.substring(0, 10),
-          targetDistanceKm: dist,
-          targetElevationM: (item['targetElevationM'] as num?)?.toDouble() ?? 0,
-          createdAt: (item['createdAt'] as num?)?.toInt() ?? DateTime.now().millisecondsSinceEpoch,
-        ));
+        events.add(
+          EventGoal(
+            name: name.isEmpty ? 'Event' : name,
+            eventDate: date.substring(0, 10),
+            targetDistanceKm: dist,
+            targetElevationM:
+                (item['targetElevationM'] as num?)?.toDouble() ?? 0,
+            createdAt:
+                (item['createdAt'] as num?)?.toInt() ??
+                DateTime.now().millisecondsSinceEpoch,
+            routeJson: (item['routeJson'] ?? '').toString(),
+          ),
+        );
       } catch (_) {
         skipped++;
       }
     }
     final p = decoded['prefs'];
     if (p is Map) {
-      for (final k in ['weekly_target_km', 'max_hr', 'user_name', 'user_age', 'weight_kg', 'theme_mode']) {
+      for (final k in [
+        'weekly_target_km',
+        'max_hr',
+        'user_name',
+        'user_age',
+        'weight_kg',
+        'theme_mode',
+      ]) {
         if (p.containsKey(k)) prefs[k] = p[k];
       }
     }
   } catch (_) {
     skipped++;
   }
-  return (activities: activities, events: events, prefs: prefs, skipped: skipped);
+  return (
+    activities: activities,
+    events: events,
+    prefs: prefs,
+    skipped: skipped,
+  );
 }

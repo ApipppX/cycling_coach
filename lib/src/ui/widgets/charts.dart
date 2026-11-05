@@ -74,6 +74,7 @@ class _LinePainter extends CustomPainter {
   _LinePainter(this.points, this.scheme);
   @override
   void paint(Canvas canvas, Size size) {
+    if (points.isEmpty) return;
     final maxV = points.reduce((a, b) => a > b ? a : b) * 1.15;
     const padT = 20.0, padB = 30.0, padL = 10.0;
     final cw = size.width - padL - 10, ch = size.height - padT - padB;

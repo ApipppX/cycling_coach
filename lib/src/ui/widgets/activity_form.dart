@@ -23,7 +23,25 @@ double? _pos(String s) {
 /// nilai otomatis diisi saat selesai edit (tombol done / pindah field)
 /// dan saat disimpan. Cukup isi 2 dari 3.
 Future<CyclingActivity?> showActivityForm(
-    BuildContext context, WidgetRef ref, CyclingActivity? initial) {
+    BuildContext context, WidgetRef ref, CyclingActivity? source) async {
+  // Edit SELALU memakai data lengkap dari DB. Daftar aktivitas sengaja
+  // ringan (tanpa route_json); tanpa pengambilan ini, menyimpan edit bisa
+  // menghapus rute GPS lama.
+  var initial = source;
+  if (source != null && source.id > 0) {
+    try {
+      initial = await ref.read(dbProvider).getActivityById(source.id) ?? source;
+    } catch (_) {
+      if (source.hasRouteData && source.routeJson.isEmpty) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Gagal memuat rute. Coba lagi.')));
+        }
+        return null;
+      }
+    }
+  }
+  if (!context.mounted) return null;
   final nameC = TextEditingController(text: initial?.name ?? '');
   final distC = TextEditingController(
       text: initial == null ? '' : initial.distanceKm.toStringAsFixed(2));

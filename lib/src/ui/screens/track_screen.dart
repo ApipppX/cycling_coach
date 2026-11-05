@@ -9,6 +9,7 @@ import '../../core/geo_utils.dart';
 import '../../core/premium.dart';
 import '../../core/track_recorder.dart';
 import '../../data/prefs.dart';
+import '../../models/planned_route.dart';
 import '../../providers/providers.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common.dart';
@@ -27,7 +28,11 @@ String _fmtClock(int sec) {
 /// Alur: Start → locating → recording (peta mengikuti) → pause/resume →
 /// Finish → dialog simpan (nama/HR/catatan) → tersimpan ke Drift + evaluasi.
 class TrackScreen extends ConsumerStatefulWidget {
-  const TrackScreen({super.key});
+  /// Rute rencana yang diikuti saat merekam. Null = rekam biasa.
+  final PlannedRoute? plannedRoute;
+
+  const TrackScreen({super.key, this.plannedRoute});
+
   @override
   ConsumerState<TrackScreen> createState() => _TrackState();
 }
@@ -37,6 +42,10 @@ class _TrackState extends ConsumerState<TrackScreen> {
   bool _follow = true;
   bool _darkMap = false;
   LatLng? _lastCentered;
+
+  PlannedRoute? get _planned => widget.plannedRoute;
+
+  bool get _hasPlannedRoute => _planned?.hasRoute ?? false;
 
   @override
   void dispose() {
@@ -97,6 +106,9 @@ class _TrackState extends ConsumerState<TrackScreen> {
         ],
       ),
       body: Column(children: [
+        // Header rute yang diikuti. Tanpa ini layar Rekam terlihat seperti
+        // rekaman kosong meski user baru memilih GPX di Jelajah.
+        if (_hasPlannedRoute) _PlannedRouteBanner(route: _planned!),
         // Banner akurasi / status. Bila error TAPI ada titik (service
         // dibunuh OS), tawarkan Simpan — data tidak hilang.
         if (t.status == TrackStatus.error)
@@ -144,6 +156,7 @@ class _TrackState extends ConsumerState<TrackScreen> {
           child: Stack(children: [
             LiveTrackMap(
               points: t.points,
+              plannedRoute: _planned?.points ?? const [],
               currentLat: t.currentLat,
               currentLng: t.currentLng,
               controller: _map,
@@ -339,11 +352,21 @@ class _TrackState extends ConsumerState<TrackScreen> {
       case TrackStatus.idle:
       case TrackStatus.finished:
         return Column(mainAxisSize: MainAxisSize.min, children: [
+          if (_hasPlannedRoute && t.status == TrackStatus.idle)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                'Rute terpasang dan tampil putus-putus di peta. GPS baru '
+                'mulai merekam setelah kamu menekan Mulai Rekam Rute.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
           AppButton(
             icon: Icons.fiber_manual_record,
             label: t.status == TrackStatus.finished
                 ? 'Rekam Lagi'
-                : 'Mulai Rekam',
+                : (_hasPlannedRoute ? 'Mulai Rekam Rute' : 'Mulai Rekam'),
             onPressed: () async {
               if (t.status == TrackStatus.finished) rec.discard();
               await rec.start();
@@ -496,6 +519,93 @@ class _TrackState extends ConsumerState<TrackScreen> {
     } else {
       rec.discard();
     }
+  }
+}
+
+/// Banner ringkas rute rencana di atas peta Rekam: nama, sumber, jarak,
+/// elevasi, estimasi waktu, dan jumlah titik (khusus GPX).
+class _PlannedRouteBanner extends StatelessWidget {
+  final PlannedRoute route;
+  const _PlannedRouteBanner({required this.route});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final showPointCount =
+        route.source != PlannedRouteSource.osrm && route.sourcePointCount > 0;
+    final meta = [
+      route.summaryLine,
+      if (showPointCount) '${route.sourcePointCount} titik',
+    ].join(' • ');
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      color: scheme.tertiaryContainer.withValues(alpha: 0.6),
+      child: Row(children: [
+        Icon(Icons.route_rounded,
+            size: 20, color: scheme.onTertiaryContainer),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                Flexible(
+                  child: Text(
+                    route.displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: scheme.onTertiaryContainer,
+                        ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _RouteSourceBadge(label: route.source.label),
+              ]),
+              const SizedBox(height: 2),
+              Text(
+                meta,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onTertiaryContainer.withValues(alpha: 0.85),
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+class _RouteSourceBadge extends StatelessWidget {
+  final String label;
+  const _RouteSourceBadge({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: scheme.tertiary.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: scheme.tertiary.withValues(alpha: 0.35)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.4,
+          color: scheme.onTertiaryContainer,
+        ),
+      ),
+    );
   }
 }
 

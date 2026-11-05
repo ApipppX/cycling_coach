@@ -21,15 +21,26 @@ void main() {
 
   test('trimp without HR estimated from distance', () {
     final act = CyclingActivity(
-      name: 'Easy', distance: 20000, totalElevationGain: 100,
-      averageSpeed: 20 / 3.6, startDate: '2026-10-05T07:00:00Z',
+      name: 'Easy',
+      distance: 20000,
+      totalElevationGain: 100,
+      averageSpeed: 20 / 3.6,
+      startDate: '2026-10-05T07:00:00Z',
     );
     expect(trimpOf(act, 185), 20 * 4.0);
   });
 
   test('csv roundtrip dengan catatan', () {
     final acts = [
-      CyclingActivity(name: 'Pagi', distance: 25000, totalElevationGain: 150, averageSpeed: 25 / 3.6, startDate: '2026-10-04T07:00:00Z', averageHeartRate: 140, note: 'Enak, "kencang"'),
+      CyclingActivity(
+        name: 'Pagi',
+        distance: 25000,
+        totalElevationGain: 150,
+        averageSpeed: 25 / 3.6,
+        startDate: '2026-10-04T07:00:00Z',
+        averageHeartRate: 140,
+        note: 'Enak, "kencang"',
+      ),
     ];
     final csv = buildActivitiesCsv(acts);
     final parsed = parseActivitiesCsv(csv);
@@ -39,11 +50,13 @@ void main() {
   });
 
   test('csv lama (7 & 9 kolom) tetap terbaca', () {
-    const legacy7 = 'id,nama,tanggal,jarak_km,elevasi_m,kecepatan_kmh,hr_bpm\n,Gowes,2026-09-01,20.00,100,20.0,130\n';
+    const legacy7 =
+        'id,nama,tanggal,jarak_km,elevasi_m,kecepatan_kmh,hr_bpm\n,Gowes,2026-09-01,20.00,100,20.0,130\n';
     final p7 = parseActivitiesCsv(legacy7);
     expect(p7.activities.length, 1);
     expect(p7.activities.first.note, '');
-    const legacy9 = 'id,nama,tanggal,jarak_km,elevasi_m,kecepatan_kmh,hr_bpm,rpe,catatan\n,Gowes,2026-09-01,20.00,100,20.0,130,5,Lama\n';
+    const legacy9 =
+        'id,nama,tanggal,jarak_km,elevasi_m,kecepatan_kmh,hr_bpm,rpe,catatan\n,Gowes,2026-09-01,20.00,100,20.0,130,5,Lama\n';
     final p9 = parseActivitiesCsv(legacy9);
     expect(p9.activities.length, 1);
     expect(p9.activities.first.note, 'Lama');
@@ -51,8 +64,11 @@ void main() {
 
   test('durationMin + estimasi kalori positif', () {
     final act = CyclingActivity(
-      name: 'Ride', distance: 30000, totalElevationGain: 200,
-      averageSpeed: 30 / 3.6, startDate: '2026-10-04T07:00:00Z',
+      name: 'Ride',
+      distance: 30000,
+      totalElevationGain: 200,
+      averageSpeed: 30 / 3.6,
+      startDate: '2026-10-04T07:00:00Z',
       averageHeartRate: 150,
     );
     expect(act.durationMin, closeTo(60, 0.01));
@@ -63,10 +79,24 @@ void main() {
 
   test('backup JSON roundtrip', () {
     final acts = [
-      CyclingActivity(name: 'Pagi', distance: 25000, totalElevationGain: 150, averageSpeed: 25 / 3.6, startDate: '2026-10-04T07:00:00Z', averageHeartRate: 140, note: 'Bagus'),
+      CyclingActivity(
+        name: 'Pagi',
+        distance: 25000,
+        totalElevationGain: 150,
+        averageSpeed: 25 / 3.6,
+        startDate: '2026-10-04T07:00:00Z',
+        averageHeartRate: 140,
+        note: 'Bagus',
+      ),
     ];
     final events = [
-      EventGoal(name: 'Audax', eventDate: '2026-12-01', targetDistanceKm: 200, createdAt: 1),
+      EventGoal(
+        name: 'Audax',
+        eventDate: '2026-12-01',
+        targetDistanceKm: 200,
+        createdAt: 1,
+        routeJson: '[[-6.2,106.8,10,0],[-6.3,106.9,20,0]]',
+      ),
     ];
     final json = exportBackupJson(
       activities: acts,
@@ -78,6 +108,7 @@ void main() {
     expect(back.activities.length, 1);
     expect(back.activities.first.note, 'Bagus');
     expect(back.events.length, 1);
+    expect(back.events.first.routeJson, contains('-6.2'));
     expect(back.prefs['user_name'], 'Budi');
   });
 
@@ -90,7 +121,11 @@ void main() {
   test('ETA aman saat di depan COT', () {
     // 50 km dalam 120 mnt = 25 km/h; sisa 50 km -> finis 240 mnt dari 480.
     final p = predictEta(
-        targetKm: 100, currentKm: 50, elapsedMin: 120, cotMin: 480);
+      targetKm: 100,
+      currentKm: 50,
+      elapsedMin: 120,
+      cotMin: 480,
+    );
     expect(p.currentAvgKmh, closeTo(25, 0.01));
     expect(p.projectedTotalMin, closeTo(240, 0.01));
     expect(p.requiredAvgKmh, closeTo(50 / 6, 0.01)); // sisa 360 mnt
@@ -102,7 +137,11 @@ void main() {
   test('ETA waspada saat mepet COT', () {
     // 80 km dalam 240 mnt = 20 km/h; proyeksi 300 dari COT 300.
     final p = predictEta(
-        targetKm: 100, currentKm: 80, elapsedMin: 240, cotMin: 300);
+      targetKm: 100,
+      currentKm: 80,
+      elapsedMin: 240,
+      cotMin: 300,
+    );
     expect(p.projectedTotalMin, closeTo(300, 0.01));
     expect(p.verdict, EtaVerdict.waspada);
   });
@@ -110,7 +149,11 @@ void main() {
   test('ETA over COT saat pace kurang', () {
     // 30 km dalam 180 mnt = 10 km/h; proyeksi 600 > COT 480.
     final p = predictEta(
-        targetKm: 100, currentKm: 30, elapsedMin: 180, cotMin: 480);
+      targetKm: 100,
+      currentKm: 30,
+      elapsedMin: 180,
+      cotMin: 480,
+    );
     expect(p.verdict, EtaVerdict.overCot);
     expect(p.bufferMin, lessThan(0));
     // pace dibutuhkan sisa: 70 km / 300 mnt = 14 km/h > pace kini 10.
@@ -119,10 +162,18 @@ void main() {
 
   test('ETA finished & belum jalan', () {
     final done = predictEta(
-        targetKm: 100, currentKm: 100, elapsedMin: 300, cotMin: 480);
+      targetKm: 100,
+      currentKm: 100,
+      elapsedMin: 300,
+      cotMin: 480,
+    );
     expect(done.verdict, EtaVerdict.finished);
     final fresh = predictEta(
-        targetKm: 100, currentKm: 0, elapsedMin: 0, cotMin: 480);
+      targetKm: 100,
+      currentKm: 0,
+      elapsedMin: 0,
+      cotMin: 480,
+    );
     expect(fresh.verdict, EtaVerdict.belumJalan);
     expect(fresh.requiredAvgKmh, closeTo(100 / 8, 0.01));
   });
@@ -133,12 +184,18 @@ void main() {
     expect(formatDuration(45), '45m');
   });
 
-  test('weekKmOf abaikan tanggal masa depan', () {    final d = DateTime.now().add(const Duration(days: 2));
+  test('weekKmOf abaikan tanggal masa depan', () {
+    final d = DateTime.now().add(const Duration(days: 2));
     String p2(int n) => n.toString().padLeft(2, '0');
-    final future =
-        '${d.year}-${p2(d.month)}-${p2(d.day)}T07:00:00Z';
+    final future = '${d.year}-${p2(d.month)}-${p2(d.day)}T07:00:00Z';
     final acts = [
-      CyclingActivity(name: 'Besok', distance: 50000, totalElevationGain: 0, averageSpeed: 25 / 3.6, startDate: future),
+      CyclingActivity(
+        name: 'Besok',
+        distance: 50000,
+        totalElevationGain: 0,
+        averageSpeed: 25 / 3.6,
+        startDate: future,
+      ),
     ];
     expect(weekKmOf(acts), 0);
   });
@@ -147,22 +204,75 @@ void main() {
     // Prev: 2x10 km @20. Recent: 10 km @20 + 50 km @30.
     // Tertimbang: (200+1500)/60=28,33 vs 20 → +41,7% (mean biasa: +25%).
     final acts = [
-      CyclingActivity(name: 'P1', distance: 10000, totalElevationGain: 0, averageSpeed: 20 / 3.6, startDate: ymd(20)),
-      CyclingActivity(name: 'P2', distance: 10000, totalElevationGain: 0, averageSpeed: 20 / 3.6, startDate: ymd(25)),
-      CyclingActivity(name: 'R1', distance: 10000, totalElevationGain: 0, averageSpeed: 20 / 3.6, startDate: ymd(2)),
-      CyclingActivity(name: 'R2', distance: 50000, totalElevationGain: 0, averageSpeed: 30 / 3.6, startDate: ymd(5)),
+      CyclingActivity(
+        name: 'P1',
+        distance: 10000,
+        totalElevationGain: 0,
+        averageSpeed: 20 / 3.6,
+        startDate: ymd(20),
+      ),
+      CyclingActivity(
+        name: 'P2',
+        distance: 10000,
+        totalElevationGain: 0,
+        averageSpeed: 20 / 3.6,
+        startDate: ymd(25),
+      ),
+      CyclingActivity(
+        name: 'R1',
+        distance: 10000,
+        totalElevationGain: 0,
+        averageSpeed: 20 / 3.6,
+        startDate: ymd(2),
+      ),
+      CyclingActivity(
+        name: 'R2',
+        distance: 50000,
+        totalElevationGain: 0,
+        averageSpeed: 30 / 3.6,
+        startDate: ymd(5),
+      ),
     ];
     final a = analyzeCoach(acts, 185);
     expect(a.speedTrendPct, closeTo(41.67, 0.5));
   });
 
   test('readiness pakai longest 90 hari, bukan rekor basi', () {
-    final ev = EventGoal(name: 'Audax', eventDate: '2026-12-01', targetDistanceKm: 100, createdAt: 1);
+    final ev = EventGoal(
+      name: 'Audax',
+      eventDate: '2026-12-01',
+      targetDistanceKm: 100,
+      createdAt: 1,
+    );
     final acts = [
-      CyclingActivity(name: 'Basi 200K', distance: 200000, totalElevationGain: 0, averageSpeed: 25 / 3.6, startDate: ymd(200)),
-      CyclingActivity(name: 'R1', distance: 10000, totalElevationGain: 0, averageSpeed: 20 / 3.6, startDate: ymd(2)),
-      CyclingActivity(name: 'R2', distance: 10000, totalElevationGain: 0, averageSpeed: 20 / 3.6, startDate: ymd(4)),
-      CyclingActivity(name: 'R3', distance: 10000, totalElevationGain: 0, averageSpeed: 20 / 3.6, startDate: ymd(6)),
+      CyclingActivity(
+        name: 'Basi 200K',
+        distance: 200000,
+        totalElevationGain: 0,
+        averageSpeed: 25 / 3.6,
+        startDate: ymd(200),
+      ),
+      CyclingActivity(
+        name: 'R1',
+        distance: 10000,
+        totalElevationGain: 0,
+        averageSpeed: 20 / 3.6,
+        startDate: ymd(2),
+      ),
+      CyclingActivity(
+        name: 'R2',
+        distance: 10000,
+        totalElevationGain: 0,
+        averageSpeed: 20 / 3.6,
+        startDate: ymd(4),
+      ),
+      CyclingActivity(
+        name: 'R3',
+        distance: 10000,
+        totalElevationGain: 0,
+        averageSpeed: 20 / 3.6,
+        startDate: ymd(6),
+      ),
     ];
     final an = analyzeCoach(acts, 185);
     final r = eventReadiness(ev, acts, an.ctl, an.weekKm);
@@ -183,8 +293,20 @@ void main() {
   test('rata-rata tertimbang durasi (bukan mean biasa)', () {
     // 10 km @20 km/jam (30 mnt) + 90 km @30 km/jam (180 mnt) = 100 km/210 mnt.
     final acts = [
-      CyclingActivity(name: 'Sprint', distance: 10000, totalElevationGain: 10, averageSpeed: 20 / 3.6, startDate: ymd(1)),
-      CyclingActivity(name: 'Long', distance: 90000, totalElevationGain: 100, averageSpeed: 30 / 3.6, startDate: ymd(0)),
+      CyclingActivity(
+        name: 'Sprint',
+        distance: 10000,
+        totalElevationGain: 10,
+        averageSpeed: 20 / 3.6,
+        startDate: ymd(1),
+      ),
+      CyclingActivity(
+        name: 'Long',
+        distance: 90000,
+        totalElevationGain: 100,
+        averageSpeed: 30 / 3.6,
+        startDate: ymd(0),
+      ),
     ];
     final a = analyzeCoach(acts, 185);
     expect(a.avgSpeedKmh, closeTo(100 / 3.5, 0.05)); // 28,57 bukan 25
@@ -192,8 +314,22 @@ void main() {
 
   test('sesi acuan ikut tanggal, bukan urutan input', () {
     final acts = [
-      CyclingActivity(name: 'Z5 Lama', distance: 20000, totalElevationGain: 50, averageSpeed: 25 / 3.6, startDate: ymd(30), averageHeartRate: 180),
-      CyclingActivity(name: 'Easy Baru', distance: 15000, totalElevationGain: 50, averageSpeed: 22 / 3.6, startDate: ymd(1), averageHeartRate: 120),
+      CyclingActivity(
+        name: 'Z5 Lama',
+        distance: 20000,
+        totalElevationGain: 50,
+        averageSpeed: 25 / 3.6,
+        startDate: ymd(30),
+        averageHeartRate: 180,
+      ),
+      CyclingActivity(
+        name: 'Easy Baru',
+        distance: 15000,
+        totalElevationGain: 50,
+        averageSpeed: 22 / 3.6,
+        startDate: ymd(1),
+        averageHeartRate: 120,
+      ),
     ];
     final a = analyzeCoach(acts, 185);
     expect(a.latestName, 'Easy Baru');
@@ -203,8 +339,22 @@ void main() {
 
   test('dua sesi keras beruntun → recovery easy', () {
     final acts = [
-      CyclingActivity(name: 'Keras 1', distance: 20000, totalElevationGain: 100, averageSpeed: 28 / 3.6, startDate: ymd(1), averageHeartRate: 160),
-      CyclingActivity(name: 'Keras 2', distance: 20000, totalElevationGain: 100, averageSpeed: 28 / 3.6, startDate: ymd(0), averageHeartRate: 162),
+      CyclingActivity(
+        name: 'Keras 1',
+        distance: 20000,
+        totalElevationGain: 100,
+        averageSpeed: 28 / 3.6,
+        startDate: ymd(1),
+        averageHeartRate: 160,
+      ),
+      CyclingActivity(
+        name: 'Keras 2',
+        distance: 20000,
+        totalElevationGain: 100,
+        averageSpeed: 28 / 3.6,
+        startDate: ymd(0),
+        averageHeartRate: 162,
+      ),
     ];
     final a = analyzeCoach(acts, 185);
     expect(a.todayType, PlanType.easy);
@@ -214,7 +364,14 @@ void main() {
   test('beban monoton 7 hari → warning', () {
     final acts = [
       for (var i = 0; i < 7; i++)
-        CyclingActivity(name: 'Rutin $i', distance: 30000, totalElevationGain: 100, averageSpeed: 25 / 3.6, startDate: ymd(i), averageHeartRate: 150),
+        CyclingActivity(
+          name: 'Rutin $i',
+          distance: 30000,
+          totalElevationGain: 100,
+          averageSpeed: 25 / 3.6,
+          startDate: ymd(i),
+          averageHeartRate: 150,
+        ),
     ];
     final a = analyzeCoach(acts, 185);
     expect(a.warnings.any((w) => w.contains('monoton')), isTrue);
@@ -222,13 +379,144 @@ void main() {
 
   test('confidence 3 tier', () {
     final one = [
-      CyclingActivity(name: 'Satu', distance: 20000, totalElevationGain: 50, averageSpeed: 22 / 3.6, startDate: ymd(0), averageHeartRate: 130),
+      CyclingActivity(
+        name: 'Satu',
+        distance: 20000,
+        totalElevationGain: 50,
+        averageSpeed: 22 / 3.6,
+        startDate: ymd(0),
+        averageHeartRate: 130,
+      ),
     ];
     expect(analyzeCoach(one, 185).confidence, contains('AWAL'));
     final five = [
       for (var i = 0; i < 5; i++)
-        CyclingActivity(name: 'R$i', distance: 20000, totalElevationGain: 50, averageSpeed: 22 / 3.6, startDate: ymd(i), averageHeartRate: 130),
+        CyclingActivity(
+          name: 'R$i',
+          distance: 20000,
+          totalElevationGain: 50,
+          averageSpeed: 22 / 3.6,
+          startDate: ymd(i),
+          averageHeartRate: 130,
+        ),
     ];
     expect(analyzeCoach(five, 185).confidence, contains('SEDANG'));
+  });
+
+  test('metrik TSS/NP/IF/VI konsisten', () {
+    // Sesi 60 menit @30 km/jam. FTP proxy = 0,95 × 30 = 28,5 km/jam.
+    final ride = CyclingActivity(
+      name: 'TT 1 jam',
+      distance: 30000,
+      totalElevationGain: 0,
+      averageSpeed: 30 / 3.6,
+      startDate: ymd(0),
+      durationSec: 3600,
+    );
+    final a = analyzeCoach([ride], 185);
+    // NP sesi tunggal ≈ kecepatan sesi (m/s → km/jam).
+    expect(a.normalizedPower * 3.6, closeTo(30, 0.1));
+    // IF = speed / FTP = 1 / 0,95.
+    expect(a.intensityFactor, closeTo(1 / 0.95, 0.01));
+    // TSS 60 mnt = 100 × IF² ≈ 110,8.
+    expect(a.tss, closeTo(100 / (0.95 * 0.95), 1.0));
+    // VI sesi tunggal ≈ 1,0 (NP = rata-rata).
+    expect(a.variabilityIndex, closeTo(1.0, 0.01));
+    // Training load kumulatif ≥ TSS 7 hari.
+    expect(a.trainingLoad, greaterThanOrEqualTo(a.tss));
+    // TSB TSS = CTL − ATL.
+    expect(a.tsbTss, closeTo(a.ctlTss - a.atlTss, 1e-9));
+    // Cakupan metrik lanjutan valid 0..1.
+    expect(a.advancedMetricCoverage, inInclusiveRange(0.0, 1.0));
+  });
+
+  test('narasi Coach AI format baku (Scenario A)', () {
+    final acts = [
+      CyclingActivity(
+        name: 'R1',
+        distance: 30000,
+        totalElevationGain: 120,
+        averageSpeed: 23 / 3.6,
+        startDate: ymd(2),
+        averageHeartRate: 138,
+      ),
+      CyclingActivity(
+        name: 'R2',
+        distance: 25000,
+        totalElevationGain: 80,
+        averageSpeed: 22 / 3.6,
+        startDate: ymd(4),
+        averageHeartRate: 132,
+      ),
+      CyclingActivity(
+        name: 'R3',
+        distance: 40000,
+        totalElevationGain: 200,
+        averageSpeed: 24 / 3.6,
+        startDate: ymd(6),
+        averageHeartRate: 142,
+      ),
+    ];
+    final a = analyzeCoach(acts, 185);
+    expect(a.sessionNote, isNotEmpty);
+    expect(a.sessionNote, contains('TSB'));
+    expect(a.whyThisSession, contains('Model TSS'));
+    expect(a.weekStructure, contains('Ringkas 7 hari:'));
+    expect(a.weekStructure, contains('Rencana:'));
+    // Judul sesi terstruktur: mengandung menit/km dan/atau bpm.
+    expect(
+      a.todayTitle,
+      anyOf(
+        contains('mnt'),
+        contains('km'),
+        contains('Rest'),
+        contains('Deload'),
+      ),
+    );
+    expect(
+      a.todayDetail,
+      anyOf(contains('Pemanasan'), contains('Tanpa sepeda'), contains('Libur')),
+    );
+  });
+
+  test('evaluasi sesi format baku (Scenario B)', () {
+    final session = CyclingActivity(
+      name: 'Threshold',
+      distance: 40000,
+      totalElevationGain: 150,
+      averageSpeed: 30 / 3.6,
+      startDate: ymd(0),
+      averageHeartRate: 168,
+      durationSec: 4800,
+    );
+    final others = [
+      CyclingActivity(
+        name: 'R1',
+        distance: 30000,
+        totalElevationGain: 100,
+        averageSpeed: 25 / 3.6,
+        startDate: ymd(2),
+        averageHeartRate: 140,
+        durationSec: 4300,
+      ),
+      CyclingActivity(
+        name: 'R2',
+        distance: 35000,
+        totalElevationGain: 120,
+        averageSpeed: 26 / 3.6,
+        startDate: ymd(4),
+        averageHeartRate: 145,
+        durationSec: 4800,
+      ),
+    ];
+    final ev = evaluateSession(session, others, 185, -6);
+    // Kesimpulan utama maksimal 3 kata.
+    expect(
+      ev.verdict.trim().split(RegExp(r'\s+')).length,
+      lessThanOrEqualTo(3),
+    );
+    // Selalu ada minimal 1 kekuatan dan 1 perhatian.
+    expect(ev.strengths, isNotEmpty);
+    expect(ev.gaps, isNotEmpty);
   });
 }

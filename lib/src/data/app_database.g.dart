@@ -685,6 +685,18 @@ class $EventGoalsTable extends EventGoals
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _routeJsonMeta = const VerificationMeta(
+    'routeJson',
+  );
+  @override
+  late final GeneratedColumn<String> routeJson = GeneratedColumn<String>(
+    'route_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -693,6 +705,7 @@ class $EventGoalsTable extends EventGoals
     targetDistanceKm,
     targetElevationM,
     createdAt,
+    routeJson,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -753,6 +766,12 @@ class $EventGoalsTable extends EventGoals
     } else if (isInserting) {
       context.missing(_createdAtMeta);
     }
+    if (data.containsKey('route_json')) {
+      context.handle(
+        _routeJsonMeta,
+        routeJson.isAcceptableOrUnknown(data['route_json']!, _routeJsonMeta),
+      );
+    }
     return context;
   }
 
@@ -786,6 +805,10 @@ class $EventGoalsTable extends EventGoals
         DriftSqlType.int,
         data['${effectivePrefix}created_at'],
       )!,
+      routeJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}route_json'],
+      )!,
     );
   }
 
@@ -802,6 +825,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
   final double targetDistanceKm;
   final double targetElevationM;
   final int createdAt;
+  final String routeJson;
   const EventRow({
     required this.id,
     required this.name,
@@ -809,6 +833,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
     required this.targetDistanceKm,
     required this.targetElevationM,
     required this.createdAt,
+    required this.routeJson,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -819,6 +844,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
     map['target_distance_km'] = Variable<double>(targetDistanceKm);
     map['target_elevation_m'] = Variable<double>(targetElevationM);
     map['created_at'] = Variable<int>(createdAt);
+    map['route_json'] = Variable<String>(routeJson);
     return map;
   }
 
@@ -830,6 +856,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       targetDistanceKm: Value(targetDistanceKm),
       targetElevationM: Value(targetElevationM),
       createdAt: Value(createdAt),
+      routeJson: Value(routeJson),
     );
   }
 
@@ -845,6 +872,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       targetDistanceKm: serializer.fromJson<double>(json['targetDistanceKm']),
       targetElevationM: serializer.fromJson<double>(json['targetElevationM']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
+      routeJson: serializer.fromJson<String>(json['routeJson']),
     );
   }
   @override
@@ -857,6 +885,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       'targetDistanceKm': serializer.toJson<double>(targetDistanceKm),
       'targetElevationM': serializer.toJson<double>(targetElevationM),
       'createdAt': serializer.toJson<int>(createdAt),
+      'routeJson': serializer.toJson<String>(routeJson),
     };
   }
 
@@ -867,6 +896,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
     double? targetDistanceKm,
     double? targetElevationM,
     int? createdAt,
+    String? routeJson,
   }) => EventRow(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -874,6 +904,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
     targetDistanceKm: targetDistanceKm ?? this.targetDistanceKm,
     targetElevationM: targetElevationM ?? this.targetElevationM,
     createdAt: createdAt ?? this.createdAt,
+    routeJson: routeJson ?? this.routeJson,
   );
   EventRow copyWithCompanion(EventGoalsCompanion data) {
     return EventRow(
@@ -887,6 +918,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
           ? data.targetElevationM.value
           : this.targetElevationM,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      routeJson: data.routeJson.present ? data.routeJson.value : this.routeJson,
     );
   }
 
@@ -898,7 +930,8 @@ class EventRow extends DataClass implements Insertable<EventRow> {
           ..write('eventDate: $eventDate, ')
           ..write('targetDistanceKm: $targetDistanceKm, ')
           ..write('targetElevationM: $targetElevationM, ')
-          ..write('createdAt: $createdAt')
+          ..write('createdAt: $createdAt, ')
+          ..write('routeJson: $routeJson')
           ..write(')'))
         .toString();
   }
@@ -911,6 +944,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
     targetDistanceKm,
     targetElevationM,
     createdAt,
+    routeJson,
   );
   @override
   bool operator ==(Object other) =>
@@ -921,7 +955,8 @@ class EventRow extends DataClass implements Insertable<EventRow> {
           other.eventDate == this.eventDate &&
           other.targetDistanceKm == this.targetDistanceKm &&
           other.targetElevationM == this.targetElevationM &&
-          other.createdAt == this.createdAt);
+          other.createdAt == this.createdAt &&
+          other.routeJson == this.routeJson);
 }
 
 class EventGoalsCompanion extends UpdateCompanion<EventRow> {
@@ -931,6 +966,7 @@ class EventGoalsCompanion extends UpdateCompanion<EventRow> {
   final Value<double> targetDistanceKm;
   final Value<double> targetElevationM;
   final Value<int> createdAt;
+  final Value<String> routeJson;
   const EventGoalsCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
@@ -938,6 +974,7 @@ class EventGoalsCompanion extends UpdateCompanion<EventRow> {
     this.targetDistanceKm = const Value.absent(),
     this.targetElevationM = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.routeJson = const Value.absent(),
   });
   EventGoalsCompanion.insert({
     this.id = const Value.absent(),
@@ -946,6 +983,7 @@ class EventGoalsCompanion extends UpdateCompanion<EventRow> {
     required double targetDistanceKm,
     this.targetElevationM = const Value.absent(),
     required int createdAt,
+    this.routeJson = const Value.absent(),
   }) : name = Value(name),
        eventDate = Value(eventDate),
        targetDistanceKm = Value(targetDistanceKm),
@@ -957,6 +995,7 @@ class EventGoalsCompanion extends UpdateCompanion<EventRow> {
     Expression<double>? targetDistanceKm,
     Expression<double>? targetElevationM,
     Expression<int>? createdAt,
+    Expression<String>? routeJson,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -965,6 +1004,7 @@ class EventGoalsCompanion extends UpdateCompanion<EventRow> {
       if (targetDistanceKm != null) 'target_distance_km': targetDistanceKm,
       if (targetElevationM != null) 'target_elevation_m': targetElevationM,
       if (createdAt != null) 'created_at': createdAt,
+      if (routeJson != null) 'route_json': routeJson,
     });
   }
 
@@ -975,6 +1015,7 @@ class EventGoalsCompanion extends UpdateCompanion<EventRow> {
     Value<double>? targetDistanceKm,
     Value<double>? targetElevationM,
     Value<int>? createdAt,
+    Value<String>? routeJson,
   }) {
     return EventGoalsCompanion(
       id: id ?? this.id,
@@ -983,6 +1024,7 @@ class EventGoalsCompanion extends UpdateCompanion<EventRow> {
       targetDistanceKm: targetDistanceKm ?? this.targetDistanceKm,
       targetElevationM: targetElevationM ?? this.targetElevationM,
       createdAt: createdAt ?? this.createdAt,
+      routeJson: routeJson ?? this.routeJson,
     );
   }
 
@@ -1007,6 +1049,9 @@ class EventGoalsCompanion extends UpdateCompanion<EventRow> {
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
     }
+    if (routeJson.present) {
+      map['route_json'] = Variable<String>(routeJson.value);
+    }
     return map;
   }
 
@@ -1018,7 +1063,8 @@ class EventGoalsCompanion extends UpdateCompanion<EventRow> {
           ..write('eventDate: $eventDate, ')
           ..write('targetDistanceKm: $targetDistanceKm, ')
           ..write('targetElevationM: $targetElevationM, ')
-          ..write('createdAt: $createdAt')
+          ..write('createdAt: $createdAt, ')
+          ..write('routeJson: $routeJson')
           ..write(')'))
         .toString();
   }
@@ -1518,6 +1564,7 @@ typedef $$EventGoalsTableCreateCompanionBuilder = EventGoalsCompanion Function({
   required double targetDistanceKm,
   Value<double> targetElevationM,
   required int createdAt,
+  Value<String> routeJson,
 });
 typedef $$EventGoalsTableUpdateCompanionBuilder = EventGoalsCompanion Function({
   Value<int> id,
@@ -1526,6 +1573,7 @@ typedef $$EventGoalsTableUpdateCompanionBuilder = EventGoalsCompanion Function({
   Value<double> targetDistanceKm,
   Value<double> targetElevationM,
   Value<int> createdAt,
+  Value<String> routeJson,
 });
 
 class $$EventGoalsTableFilterComposer
@@ -1564,6 +1612,11 @@ class $$EventGoalsTableFilterComposer
 
   ColumnFilters<int> get createdAt => $composableBuilder(
     column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get routeJson => $composableBuilder(
+    column: $table.routeJson,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -1606,6 +1659,11 @@ class $$EventGoalsTableOrderingComposer
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get routeJson => $composableBuilder(
+    column: $table.routeJson,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$EventGoalsTableAnnotationComposer
@@ -1638,6 +1696,9 @@ class $$EventGoalsTableAnnotationComposer
 
   GeneratedColumn<int> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<String> get routeJson =>
+      $composableBuilder(column: $table.routeJson, builder: (column) => column);
 }
 
 class $$EventGoalsTableTableManager
@@ -1674,6 +1735,7 @@ class $$EventGoalsTableTableManager
                 Value<double> targetDistanceKm = const Value.absent(),
                 Value<double> targetElevationM = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
+                Value<String> routeJson = const Value.absent(),
               }) => EventGoalsCompanion(
                 id: id,
                 name: name,
@@ -1681,6 +1743,7 @@ class $$EventGoalsTableTableManager
                 targetDistanceKm: targetDistanceKm,
                 targetElevationM: targetElevationM,
                 createdAt: createdAt,
+                routeJson: routeJson,
               ),
           createCompanionCallback:
               ({
@@ -1690,6 +1753,7 @@ class $$EventGoalsTableTableManager
                 required double targetDistanceKm,
                 Value<double> targetElevationM = const Value.absent(),
                 required int createdAt,
+                Value<String> routeJson = const Value.absent(),
               }) => EventGoalsCompanion.insert(
                 id: id,
                 name: name,
@@ -1697,6 +1761,7 @@ class $$EventGoalsTableTableManager
                 targetDistanceKm: targetDistanceKm,
                 targetElevationM: targetElevationM,
                 createdAt: createdAt,
+                routeJson: routeJson,
               ),
           withReferenceMapper: (p0) => p0
               .map(
