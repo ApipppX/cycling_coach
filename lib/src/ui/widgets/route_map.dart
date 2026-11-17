@@ -40,6 +40,12 @@ const _hotUrl = 'https://tile.openstreetmap.fr/hot/{z}/{x}/{y}.png';
 const _osmAttribution = '© OpenStreetMap contributors · Powered by Esri';
 const _appPackage = 'com.apipppx.cyclingcoach';
 
+/// Warna garis rute kontras tinggi. Oranye terang = jejak yang sudah
+/// direkam, biru elektrik = jalur rencana (OSRM/GPX) yang belum dilewati.
+/// Keduanya opak penuh agar tidak tenggelam di atas jalan peta yang terang.
+const routeTrailColor = Color(0xFFFF5500);
+const routePlannedColor = Color(0xFF0066FF);
+
 /// Penghitung error tile global per sesi jalan-nya app.
 ///
 /// Latar: badge "wifi mati" yang SELALU tampil membuat user mengira peta
@@ -79,6 +85,23 @@ List<LatLng> _downsampleRoute(List<LatLng> pts, [int maxPoints = 1200]) {
   return List<LatLng>.generate(
       maxPoints, (i) => pts[(i * step).round()],
       growable: false);
+}
+
+/// Garis rute kontras tinggi: warna pekat solid + outline putih tipis.
+/// Outline membuat garis tetap terbaca di atas jalan terang, area hijau,
+/// maupun tile gelap saat mode malam.
+Polyline routeLine(
+  List<LatLng> pts, {
+  required Color color,
+  double width = 7,
+}) {
+  return Polyline(
+    points: pts,
+    strokeWidth: width,
+    color: color,
+    borderStrokeWidth: 3,
+    borderColor: Colors.white,
+  );
 }
 
 LatLngBounds? boundsOf(List<LatLng> pts) {
@@ -166,8 +189,7 @@ class RouteMap extends StatelessWidget {
             osmTiles(),
             PolylineLayer(
               polylines: [
-                Polyline(
-                    points: pts, strokeWidth: 4.5, color: scheme.primary),
+                routeLine(pts, color: routeTrailColor),
               ],
             ),
             MarkerLayer(
@@ -280,18 +302,9 @@ class LiveTrackMap extends StatelessWidget {
         if (planned.length >= 2)
           PolylineLayer(
             polylines: [
-              // Halo tipis supaya jalur tetap kebaca di atas tile gelap.
-              Polyline(
-                points: planned,
-                strokeWidth: 8,
-                color: scheme.tertiary.withValues(alpha: 0.18),
-              ),
-              Polyline(
-                points: planned,
-                strokeWidth: 4,
-                color: scheme.tertiary,
-                pattern: StrokePattern.dashed(segments: const [8, 6]),
-              ),
+              // Jalur rencana: biru elektrik solid + outline putih agar
+              // tetap terlihat sebelum rekaman dimulai.
+              routeLine(planned, color: routePlannedColor, width: 6),
             ],
           ),
         if (planned.length >= 2)
@@ -308,18 +321,16 @@ class LiveTrackMap extends StatelessWidget {
                 point: planned.last,
                 width: 28,
                 height: 28,
-                child: _Pin(
-                    color: scheme.tertiary, icon: Icons.flag_rounded),
+                child: const _Pin(
+                    color: routePlannedColor, icon: Icons.flag_rounded),
               ),
             ],
           ),
         if (drawnTrail.length >= 2)
           PolylineLayer(
             polylines: [
-              Polyline(
-                  points: drawnTrail,
-                  strokeWidth: 5,
-                  color: scheme.primary),
+              // Jejak terekam: oranye terang solid + outline putih.
+              routeLine(drawnTrail, color: routeTrailColor),
             ],
           ),
         if (currentLat != null && currentLng != null)
